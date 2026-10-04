@@ -1,0 +1,32 @@
+# Environment & Secrets
+.env
+.env.*
+
+# Python Cache & Environments
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Logs
+*.log
+logs/
+
+# PDF Storage
+pdf_peraturan/*.pdf
+pdf_peraturan/*.PDF
+!pdf_peraturan/.gitkeep
+
+# Legacy Node / State
+node_modules/
+package-lock.json
+all_pdf_metadata.json
+resume_crawl.json
+
+# OS & Editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
