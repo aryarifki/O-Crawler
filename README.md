@@ -1,5 +1,12 @@
 # 🦅 O-Crawler (OWLEXIA Legal Crawler & Ingestion Engine)
 
+[![Status](https://img.shields.io/badge/status-active-success.svg)]()
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B%20%7C%2017-336791.svg)]()
+[![Cloudflare R2](https://img.shields.io/badge/Cloudflare_R2-Streaming_Storage-F38020.svg)]()
+[![Anti-WAF](https://img.shields.io/badge/Anti--WAF-curl__cffi%20TLS%2FJA3-green.svg)]()
+[![License](https://img.shields.io/badge/license-ISC-lightgrey.svg)]()
+
 **O-Crawler** adalah mesin *crawler*, *extractor*, dan *pipeline ingestion* dokumen hukum Indonesia modern berbasis Python yang dirancang untuk mengunduh, mengekstrak, dan mengindeks seluruh regulasi resmi dari portal [peraturan.go.id](https://peraturan.go.id).
 
 Proyek ini terintegrasi penuh ke dalam ekosistem kecerdasan artifisial **OWLEXIA Legal AI Agent**. Seluruh pasal perundang-undangan diekstrak secara hierarkis (BAB, Bagian, Nomor Pasal, Isi Teks, dan Penjelasan) ke dalam **PostgreSQL**, sedangkan salinan otentik berkas fisik PDF otomatis diunggah ke **Cloudflare R2 Object Storage** dengan biaya transfer data (*egress*) Rp 0.
@@ -30,7 +37,7 @@ flowchart TD
     D --> B
     C -->|Valid| E["Ekstraksi Teks (pypdf)"]
     E -->|BAB, Pasal, Penjelasan| F[("PostgreSQL: owlexia_db")]
-    E -->|Streaming Upload| G["Cloudflare R2 Bucket"]
+    E -->|Streaming Upload| G["Cloudflare R2 Bucket (owlexia-r2)"]
     G -->|Update URL Publik CDN| F
     G -->|Hapus Berkas Lokal| H["Disk Server Bersih (0 MB)"]
     F -->|Retrieval & Penalaran IRAC| I["OWLEXIA Legal AI Agent"]
@@ -41,8 +48,8 @@ flowchart TD
 ## 📋 Prasyarat Sistem
 
 - **Python**: v3.10 atau lebih baru
-- **PostgreSQL**: v15+ (direkomendasikan v16+)
-- **Akun Cloudflare R2**: (Opsional, untuk penyimpanan cloud PDF)
+- **PostgreSQL**: v15+ (direkomendasikan v17)
+- **Akun Cloudflare R2**: (Kredensial S3-compatible API token)
 
 ---
 
@@ -62,12 +69,16 @@ pip install -r requirements.txt
 ```
 
 ### 3. Konfigurasi Lingkungan (`.env`)
-Salin atau buat file `.env` di direktori proyek:
+Salin file template `env.example`:
+```bash
+cp env.example .env
+```
+Sesuaikan nilai konfigurasi:
 ```env
 # Koneksi Database PostgreSQL
 DATABASE_URL=postgresql://owlexia:owlexia_pass@localhost:5432/owlexia_db
 
-# Konfigurasi Cloudflare R2 (Opsional jika ingin simpan PDF ke cloud)
+# Konfigurasi Cloudflare R2
 R2_ACCOUNT_ID=your_cloudflare_account_id
 R2_BUCKET_NAME=owlexia-r2
 R2_API_TOKEN=your_r2_api_token
@@ -108,7 +119,7 @@ Anda akan disambut oleh menu pemilihan kategori peraturan:
 
 ---
 
-### 2. Mode Perintah CLI (Otomasi & Scripting)
+## ⚡ Mode Perintah CLI (Otomasi & Scripting)
 Gunakan flag CLI untuk keperluan background task atau cron job:
 
 ```bash
@@ -125,7 +136,7 @@ python3 anti_waf_crawler.py --category pp --keep-local-pdf
 nohup python3 -u anti_waf_crawler.py --category uu --pages 50 --delay 2.5 > crawler.log 2>&1 &
 ```
 
-#### Parameter CLI Lengkap:
+### Parameter CLI Lengkap:
 | Opsi | Tipe | Default | Deskripsi |
 | :--- | :--- | :--- | :--- |
 | `--category`, `-c` | string | `"uu"` | Kategori peraturan (`uu`, `pp`, `perpres`, `perppu`, `tapmpr`, `permen`, dll.) |
@@ -141,18 +152,26 @@ nohup python3 -u anti_waf_crawler.py --category uu --pages 50 --delay 2.5 > craw
 
 ---
 
-### 3. Migrasi Dokumen Massal ke Cloudflare R2 (`migrate_to_r2.py`)
+## 🗃️ Migrasi Dokumen Massal ke Cloudflare R2 (`migrate_to_r2.py`)
 Jika Anda memiliki berkas PDF lokal yang sebelumnya tersimpan di folder `pdf_peraturan/`:
 ```bash
 python3 migrate_to_r2.py
 ```
 Skrip ini akan secara otomatis:
-1. Mengunggah seluruh PDF ke Cloudflare R2.
+1. Mengunggah seluruh PDF ke Cloudflare R2 secara streaming.
 2. Memperbarui kolom `pdf_path` di PostgreSQL ke URL CDN publik R2.
 3. Menghapus berkas lokal yang telah terverifikasi aman di cloud.
 
 ---
 
+## 🔗 Ekosistem Integrasi OWLEXIA
+O-Crawler berfungsi sebagai penyedia data utama bagi:
+- **OWLEXIA Legal Reasoning Engine**: Memasok pasal-pasal terkini ke database PostgreSQL.
+- **Hierarchical Hybrid RAG**: Mengaktifkan pencarian semantik dan FTS di atas basis data peraturan terindeks.
+- **OWLEXIA REST API**: Menyediakan endpoint sinkronisasi `/api/sync-database` dan status `/api/crawler-status`.
+
+---
+
 ## 📄 Lisensi
-Didistribusikan di bawah lisensi [ISC License](LICENSE).
+Didistribusikan di bawah lisensi [ISC License](LICENSE).  
 Dikembangkan untuk ekosistem **OWLEXIA Legal AI Intelligence**.
