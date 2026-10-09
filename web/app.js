@@ -341,6 +341,23 @@ async function fetchStats() {
         : 'Kapasitas folder pdf_downloads lokal';
     }
 
+    // Cache Engine Metrics
+    if (data.cache) {
+      if (document.getElementById('storage-cache-driver')) {
+        document.getElementById('storage-cache-driver').innerText = data.cache.driver || 'L1 RAM + L2 Redis';
+      }
+      if (document.getElementById('storage-cache-stat')) {
+        const hits = data.cache.memory_hits || 0;
+        const ratio = data.cache.hit_ratio_percent || 0;
+        document.getElementById('storage-cache-stat').innerText = `${hits} Hits (${ratio}%)`;
+      }
+      if (document.getElementById('storage-cache-desc')) {
+        const memKeys = data.cache.memory_keys_count || 0;
+        const redisKeys = data.cache.redis_keys_count || 0;
+        document.getElementById('storage-cache-desc').innerText = `L1 RAM: ${memKeys} keys · L2 Redis: ${redisKeys} keys (0ms latency)`;
+      }
+    }
+
     // Detail entity counts
     if (document.getElementById('detail-count-reg')) {
       document.getElementById('detail-count-reg').innerText = `${(data.total_regulations || 0).toLocaleString()} baris`;

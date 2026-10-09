@@ -19,10 +19,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPExceptio
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 
 from db_manager import DatabaseManager
 from crawler_engine import CrawlerEngine
+from cache import cache, cached, invalidate_cache
 
 
 app = FastAPI(
@@ -30,6 +32,9 @@ app = FastAPI(
     description="High-Speed Legal Crawler & Ingestion Engine (Peraturan, MA, MK)",
     version="2.0.0",
 )
+
+# GZip Middleware (Kompresi JSON besar untuk transfer super cepat ke frontend)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 app.add_middleware(
     CORSMiddleware,
@@ -87,6 +92,11 @@ ws_manager = ConnectionManager()
 # Sambungkan event bus engine ke WebSocket broadcaster
 def on_engine_event(event: dict):
     try:
+        # Invalidasi cache data & statistik ketika proses crawling menghasilkan dokumen baru
+        evt_type = event.get("type")
+        if evt_type in ("complete", "stopped", "error", "item_saved", "saved", "stat_update"):
+            invalidate_cache("stats:*")
+            invalidate_cache("data:*")
         loop = asyncio.get_event_loop()
         if loop.is_running():
             asyncio.create_task(ws_manager.broadcast_json(event))
@@ -117,10 +127,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # --- REST API ENDPOINTS ---
 @app.get("/api/stats")
+@cached(ttl_seconds=10, prefix="stats")
 async def get_stats():
-    """Mengambil metrik statistik dokumen dan job crawler."""
+    """Mengambil metrik statistik dokumen dan job crawler (Cached 10s via L1 Memory + Redis)."""
     stats = db.get_stats()
     stats["engine"] = engine.get_status()
+    stats["cache"] = cache.get_stats()
     return stats
 
 
@@ -136,6 +148,8 @@ async def start_crawl(req: CrawlStartRequest):
     if engine.is_running:
         raise HTTPException(status_code=400, detail="Crawler sedang berjalan. Hentikan job aktif terlebih dahulu.")
     try:
+        invalidate_cache("stats:*")
+        invalidate_cache("data:*")
         job_id = await engine.start_crawl(req.dict())
         return {"success": True, "job_id": job_id, "message": f"Crawling sumber '{req.source}' dimulai."}
     except Exception as e:
@@ -146,20 +160,23 @@ async def start_crawl(req: CrawlStartRequest):
 async def stop_crawl():
     """Menghentikan crawling yang sedang berjalan."""
     await engine.stop_crawl()
+    invalidate_cache("stats:*")
     return {"success": True, "message": "Perintah stop dikirim."}
 
 
 @app.get("/api/data/regulations")
+@cached(ttl_seconds=60, prefix="data")
 async def get_regulations(q: str = "", page: int = 1, limit: int = 25):
-    """Mendapatkan daftar regulasi tersimpan."""
+    """Mendapatkan daftar regulasi tersimpan (Cached 60s)."""
     offset = (page - 1) * limit
     items = db.query_regulations(q=q, limit=limit, offset=offset)
     return {"page": page, "limit": limit, "items": items, "count": len(items)}
 
 
 @app.get("/api/data/decisions")
+@cached(ttl_seconds=60, prefix="data")
 async def get_court_decisions(lembaga: str = "", q: str = "", page: int = 1, limit: int = 25):
-    """Mendapatkan daftar putusan peradilan tersimpan (MA/MK)."""
+    """Mendapatkan daftar putusan peradilan tersimpan (MA/MK) (Cached 60s)."""
     offset = (page - 1) * limit
     items = db.query_court_decisions(lembaga=lembaga, q=q, limit=limit, offset=offset)
     return {"page": page, "limit": limit, "items": items, "count": len(items)}
@@ -195,7 +212,21 @@ async def export_data(type: str = Query("regulations", pattern="^(regulations|de
         )
 
 
+@app.get("/api/cache/stats")
+async def get_cache_stats():
+    """Mengambil status metrik diagnostik layer cache."""
+    return cache.get_stats()
+
+
+@app.post("/api/cache/clear")
+async def clear_cache():
+    """Mengosongkan cache in-memory dan Redis."""
+    cache.clear()
+    return {"success": True, "message": "Seluruh cache (L1 RAM + L2 Redis) berhasil dibersihkan."}
+
+
 @app.get("/api/health")
+@cached(ttl_seconds=10, prefix="health")
 async def health_check():
     """Status kesehatan sistem."""
     return {
@@ -205,6 +236,7 @@ async def health_check():
         "database": "PostgreSQL (owlexia_db)" if db.is_postgres else "SQLite Local",
         "r2_storage": bool(engine.r2 and engine.r2.is_configured()),
         "crawler_active": engine.is_running,
+        "cache": cache.get_stats(),
     }
 
 
@@ -216,14 +248,18 @@ PDF_DIR.mkdir(parents=True, exist_ok=True)
 @app.api_route("/root/O-Crawler/pdf_downloads/{filename}", methods=["GET", "HEAD"])
 @app.api_route("/api/pdf/{filename}", methods=["GET", "HEAD"])
 async def serve_downloaded_pdf(filename: str):
-    """Menyajikan berkas PDF: langsung dari disk jika ada, atau Streaming Reverse Proxy dari Cloudflare R2."""
+    """Menyajikan berkas PDF: langsung dari disk jika ada, atau Streaming Reverse Proxy dari Cloudflare R2 dengan auto-cache ke disk lokal."""
     clean_name = Path(filename).name
     file_path = PDF_DIR / clean_name
     if file_path.is_file():
         return FileResponse(
             path=str(file_path),
             media_type="application/pdf",
-            headers={"Content-Disposition": f"inline; filename=\"{clean_name}\""},
+            headers={
+                "Content-Disposition": f"inline; filename=\"{clean_name}\"",
+                "Cache-Control": "public, max-age=604800, immutable",
+                "X-Cache-Status": "HIT_DISK",
+            },
         )
     
     # Streaming Reverse Proxy dari Cloudflare R2 (Bypass sensor/DNS poison ISP Indonesia pada domain *.r2.dev)
@@ -238,21 +274,50 @@ async def serve_downloaded_pdf(filename: str):
         content_length = resp.headers.get("Content-Length")
         headers = {
             "Content-Disposition": f"inline; filename=\"{clean_name}\"",
-            "Cache-Control": "public, max-age=86400",
+            "Cache-Control": "public, max-age=604800",
             "Accept-Ranges": "bytes",
+            "X-Cache-Status": "MISS_PROXY_STREAM",
         }
         if content_length:
             headers["Content-Length"] = content_length
 
+        # Auto disk caching: simpan streaming ke file temp lalu rename atomik saat selesai
+        temp_file = file_path.with_suffix(f".tmp.{os.getpid()}.{int(asyncio.get_event_loop().time()*1000)}")
+
         def file_iterator():
+            fp = None
             try:
+                fp = open(temp_file, "wb")
                 while True:
                     chunk = resp.read(64 * 1024)
                     if not chunk:
                         break
+                    if fp:
+                        fp.write(chunk)
                     yield chunk
+                if fp:
+                    fp.close()
+                    fp = None
+                    os.replace(temp_file, file_path)
+            except Exception:
+                if fp:
+                    fp.close()
+                    fp = None
+                if temp_file.exists():
+                    try:
+                        temp_file.unlink()
+                    except Exception:
+                        pass
+                raise
             finally:
                 resp.close()
+                if fp:
+                    fp.close()
+                if temp_file.exists() and not file_path.exists():
+                    try:
+                        temp_file.unlink()
+                    except Exception:
+                        pass
 
         return StreamingResponse(
             file_iterator(),
