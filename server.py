@@ -267,6 +267,34 @@ async def serve_downloaded_pdf(filename: str):
         raise HTTPException(status_code=500, detail=f"Kesalahan proxy streaming PDF: {str(e)}")
 
 
+# Explicit Frontend Handlers with Anti-Caching headers
+@app.get("/")
+async def serve_index():
+    return FileResponse(
+        WEB_DIR / "index.html",
+        media_type="text/html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
+
+
+@app.get("/app.js")
+async def serve_app_js():
+    return FileResponse(
+        WEB_DIR / "app.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
+
+
+@app.get("/style.css")
+async def serve_style_css():
+    return FileResponse(
+        WEB_DIR / "style.css",
+        media_type="text/css",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
+
+
 # Mount PDF downloads directory
 app.mount("/pdf_downloads", StaticFiles(directory=str(PDF_DIR)), name="pdf_downloads")
 

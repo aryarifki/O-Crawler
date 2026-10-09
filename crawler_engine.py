@@ -240,7 +240,7 @@ class CrawlerEngine:
                         if self.r2 and self.r2.is_configured():
                             r2_url = await loop.run_in_executor(None, self.r2.upload_file, dest_pdf, pdf_name)
                             if r2_url:
-                                meta["pdf_path"] = r2_url
+                                meta["pdf_path"] = f"/api/pdf/{pdf_name}"
                                 if not keep_local_pdf:
                                     dest_pdf.unlink(missing_ok=True)
 
@@ -326,7 +326,7 @@ class CrawlerEngine:
                             if self.r2 and self.r2.is_configured():
                                 r2_url = await loop.run_in_executor(None, self.r2.upload_file, dest_pdf, pdf_name)
                                 if r2_url:
-                                    meta["pdf_path"] = r2_url
+                                    meta["pdf_path"] = f"/api/pdf/{pdf_name}"
                                     if not keep_local_pdf:
                                         dest_pdf.unlink(missing_ok=True)
 
@@ -401,7 +401,7 @@ class CrawlerEngine:
                             if self.r2 and self.r2.is_configured():
                                 r2_url = await loop.run_in_executor(None, self.r2.upload_file, dest_pdf, pdf_name)
                                 if r2_url:
-                                    item["pdf_path"] = r2_url
+                                    item["pdf_path"] = f"/api/pdf/{pdf_name}"
                                     if not keep_local_pdf:
                                         dest_pdf.unlink(missing_ok=True)
 
