@@ -212,9 +212,9 @@ PDF_DIR = Path(__file__).resolve().parent / "pdf_downloads"
 PDF_DIR.mkdir(parents=True, exist_ok=True)
 
 
-@app.get("/pdf_downloads/{filename}")
-@app.get("/root/O-Crawler/pdf_downloads/{filename}")
-@app.get("/api/pdf/{filename}")
+@app.api_route("/pdf_downloads/{filename}", methods=["GET", "HEAD"])
+@app.api_route("/root/O-Crawler/pdf_downloads/{filename}", methods=["GET", "HEAD"])
+@app.api_route("/api/pdf/{filename}", methods=["GET", "HEAD"])
 async def serve_downloaded_pdf(filename: str):
     """Menyajikan berkas PDF: langsung dari disk jika ada, atau Streaming Reverse Proxy dari Cloudflare R2."""
     clean_name = Path(filename).name
