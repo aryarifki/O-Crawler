@@ -18,6 +18,9 @@ logs/
 pdf_peraturan/*.pdf
 pdf_peraturan/*.PDF
 !pdf_peraturan/.gitkeep
+pdf_downloads/
+*.db
+
 
 # Legacy Node / State
 node_modules/

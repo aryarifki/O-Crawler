@@ -1,0 +1,221 @@
+"""O-Crawler FastAPI Application & Real-Time WebSocket Server.
+
+Menyediakan API kontrol, data explorer, streaming log real-time,
+serta melayani antarmuka Modern SaaS GUI pada port 8080.
+"""
+from __future__ import annotations
+import os
+import sys
+import json
+import csv
+import io
+import asyncio
+from pathlib import Path
+from typing import Optional, Dict, Any, List
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException, Response
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+from db_manager import DatabaseManager
+from crawler_engine import CrawlerEngine
+
+
+app = FastAPI(
+    title="O-Crawler SaaS API",
+    description="High-Speed Legal Crawler & Ingestion Engine (Peraturan, MA, MK)",
+    version="2.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Inisialisasi DB dan Engine
+db = DatabaseManager()
+engine = CrawlerEngine(db=db)
+
+# Folder Web Static
+WEB_DIR = Path(__file__).resolve().parent / "web"
+WEB_DIR.mkdir(parents=True, exist_ok=True)
+
+
+class CrawlStartRequest(BaseModel):
+    source: str = Field(default="peraturan", description="peraturan | ma | mk")
+    category: str = Field(default="", description="Slug kategori")
+    query: str = Field(default="", description="Kata kunci pencarian")
+    tahun: str = Field(default="", description="Filter tahun")
+    start_page: int = Field(default=1, ge=1)
+    pages: int = Field(default=0, ge=0)
+    limit: int = Field(default=500, ge=1, le=10000)
+    concurrency: int = Field(default=5, ge=1, le=20)
+    delay: float = Field(default=1.0, ge=0.0, le=30.0)
+    keep_local_pdf: bool = Field(default=False)
+
+
+# --- WEBSOCKET CONNECTION MANAGER ---
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast_json(self, message: dict):
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_text(json.dumps(message))
+            except Exception:
+                self.disconnect(connection)
+
+
+ws_manager = ConnectionManager()
+
+# Sambungkan event bus engine ke WebSocket broadcaster
+def on_engine_event(event: dict):
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.create_task(ws_manager.broadcast_json(event))
+    except Exception:
+        pass
+
+engine.add_listener(on_engine_event)
+
+
+@app.websocket("/ws/crawler")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    # Kirim status inisial saat tersambung
+    await websocket.send_text(json.dumps({"type": "status", **engine.get_status()}))
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Dukungan perintah sederhana via WS
+            try:
+                cmd = json.loads(data)
+                if cmd.get("action") == "stop":
+                    await engine.stop_crawl()
+            except Exception:
+                pass
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+
+
+# --- REST API ENDPOINTS ---
+@app.get("/api/stats")
+async def get_stats():
+    """Mengambil metrik statistik dokumen dan job crawler."""
+    stats = db.get_stats()
+    stats["engine"] = engine.get_status()
+    return stats
+
+
+@app.get("/api/crawl/status")
+async def get_crawl_status():
+    """Mengambil status real-time crawler aktif."""
+    return engine.get_status()
+
+
+@app.post("/api/crawl/start")
+async def start_crawl(req: CrawlStartRequest):
+    """Menjalankan job crawling baru."""
+    if engine.is_running:
+        raise HTTPException(status_code=400, detail="Crawler sedang berjalan. Hentikan job aktif terlebih dahulu.")
+    try:
+        job_id = await engine.start_crawl(req.dict())
+        return {"success": True, "job_id": job_id, "message": f"Crawling sumber '{req.source}' dimulai."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/crawl/stop")
+async def stop_crawl():
+    """Menghentikan crawling yang sedang berjalan."""
+    await engine.stop_crawl()
+    return {"success": True, "message": "Perintah stop dikirim."}
+
+
+@app.get("/api/data/regulations")
+async def get_regulations(q: str = "", page: int = 1, limit: int = 25):
+    """Mendapatkan daftar regulasi tersimpan."""
+    offset = (page - 1) * limit
+    items = db.query_regulations(q=q, limit=limit, offset=offset)
+    return {"page": page, "limit": limit, "items": items, "count": len(items)}
+
+
+@app.get("/api/data/decisions")
+async def get_court_decisions(lembaga: str = "", q: str = "", page: int = 1, limit: int = 25):
+    """Mendapatkan daftar putusan peradilan tersimpan (MA/MK)."""
+    offset = (page - 1) * limit
+    items = db.query_court_decisions(lembaga=lembaga, q=q, limit=limit, offset=offset)
+    return {"page": page, "limit": limit, "items": items, "count": len(items)}
+
+
+@app.get("/api/export")
+async def export_data(type: str = Query("regulations", pattern="^(regulations|decisions)$"), format: str = Query("json", pattern="^(json|csv)$")):
+    """Ekspor data ke format CSV atau JSON."""
+    if type == "regulations":
+        data = db.query_regulations(limit=5000)
+        filename = "o_crawler_regulations"
+    else:
+        data = db.query_court_decisions(limit=5000)
+        filename = "o_crawler_court_decisions"
+
+    if format == "json":
+        return Response(
+            content=json.dumps(data, indent=2, ensure_ascii=False),
+            media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename={filename}.json"},
+        )
+    else:
+        # CSV Export
+        output = io.StringIO()
+        if data:
+            writer = csv.DictWriter(output, fieldnames=list(data[0].keys()))
+            writer.writeheader()
+            writer.writerows(data)
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}.csv"},
+        )
+
+
+@app.get("/api/health")
+async def health_check():
+    """Status kesehatan sistem."""
+    return {
+        "status": "healthy",
+        "app_name": "O-Crawler",
+        "version": "2.0.0",
+        "database": "PostgreSQL (owlexia_db)" if db.is_postgres else "SQLite Local",
+        "r2_storage": bool(engine.r2 and engine.r2.is_configured()),
+        "crawler_active": engine.is_running,
+    }
+
+
+# Mount Static Frontend
+app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="static")
+
+
+def main():
+    import uvicorn
+    port = int(os.getenv("PORT", 8080))
+    print(f"🚀 Memulai O-Crawler SaaS Server di http://0.0.0.0:{port}")
+    uvicorn.run("server:app", host="0.0.0.0", port=port, reload=False, access_log=False)
+
+
+if __name__ == "__main__":
+    main()

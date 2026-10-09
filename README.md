@@ -1,29 +1,36 @@
-# 🦅 O-Crawler (OWLEXIA Legal Crawler & Ingestion Engine)
+# 🦅 O-Crawler (Legal Crawler, Court Ingestion Engine & SaaS Dashboard)
 
 [![Status](https://img.shields.io/badge/status-active-success.svg)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)]()
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110%2B-009688.svg)]()
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B%20%7C%2017-336791.svg)]()
 [![Cloudflare R2](https://img.shields.io/badge/Cloudflare_R2-Streaming_Storage-F38020.svg)]()
 [![Anti-WAF](https://img.shields.io/badge/Anti--WAF-curl__cffi%20TLS%2FJA3-green.svg)]()
 [![License](https://img.shields.io/badge/license-ISC-lightgrey.svg)]()
 
-**O-Crawler** adalah mesin *crawler*, *extractor*, dan *pipeline ingestion* dokumen hukum Indonesia modern berbasis Python yang dirancang untuk mengunduh, mengekstrak, dan mengindeks seluruh regulasi resmi dari portal [peraturan.go.id](https://peraturan.go.id).
+**O-Crawler** adalah mesin *crawler*, *extractor*, dan *pipeline ingestion* dokumen hukum Indonesia modern berbasis Python & FastAPI yang dirancang untuk mengunduh, mengekstrak, dan mengindeks:
+1. **Regulasi Resmi**: Dari portal [peraturan.go.id](https://peraturan.go.id) (UU, PP, Perpres, Permen, Perda, dll.).
+2. **Putusan Mahkamah Agung RI**: Dari portal [putusan3.mahkamahagung.go.id](https://putusan3.mahkamahagung.go.id) (Kasasi, Peninjauan Kembali, Tipikor, Perdata, Pidana, TUN, Pajak, dll.).
+3. **Putusan Mahkamah Konstitusi RI**: Dari portal [mkri.id](https://www.mkri.id) (Pengujian UU [PUU], SKLN, Sengketa Pemilu [PHPU], dan Sengketa Pilkada [PHPKADA]).
 
-Proyek ini terintegrasi penuh ke dalam ekosistem kecerdasan artifisial **OWLEXIA Legal AI Agent**. Seluruh pasal perundang-undangan diekstrak secara hierarkis (BAB, Bagian, Nomor Pasal, Isi Teks, dan Penjelasan) ke dalam **PostgreSQL**, sedangkan salinan otentik berkas fisik PDF otomatis diunggah ke **Cloudflare R2 Object Storage** dengan biaya transfer data (*egress*) Rp 0.
+Aplikasi ini dilengkapi antarmuka **Modern SaaS GUI** yang super cepat dengan konkurensi multi-worker, visualisasi telemetri real-time, terminal log langsung via WebSocket, data explorer interaktif, dan integrasi publikasi Cloudflare Tunnel ke `ocrawler.sugarate.me` (`ocrawler.cugarete.me`).
 
 ---
 
 ## 🌟 Fitur Utama
 
-- 🛡️ **Anti-WAF & Cloudflare Bypass**: Menggunakan `curl_cffi` untuk meniru sidik jari TLS/JA3 browser otentik (Safari 17 / Chrome 120), rotasi user-agent otomatis, dan penanganan cookie dinamis.
-- 🧙‍♂️ **Interactive Terminal Wizard**: Cukup jalankan `python3 anti_waf_crawler.py` tanpa argumen untuk memunculkan menu interaktif yang mudah dipahami.
-- 📜 **Hierarchical Legal Article Parser**: Membedah dokumen PDF secara presisi menggunakan `pypdf`:
-  - Menghapus watermark lembaran negara (`SK No ...`, `PRESIDEN REPUBLIK INDONESIA`).
-  - Mengekstrak struktur hierarkis BAB, Bagian, Nomor Pasal, teks isi pasal, dan Penjelasan resmi.
-- 🗄️ **PostgreSQL Ingestion Pipeline**: Melakukan `UPSERT` langsung ke tabel `regulations` dan `legal_articles` di `owlexia_db`.
-- ☁️ **Cloudflare R2 Streaming Storage**: Berkas PDF otomatis diunggah ke Cloudflare R2 secara streaming (hemat RAM), lalu berkas lokal dibersihkan agar harddisk server lokal tidak pernah penuh.
-- ⏩ **Smart Skip (Anti-Duplikasi)**: Otomatis mendeteksi dan melewati regulasi yang sudah tersimpan lengkap di database untuk menghemat waktu dan bandwidth.
-- 📦 **Batch Migration Utility (`migrate_to_r2.py`)**: Skrip mandiri untuk memigrasikan tumpukan PDF lokal lama ke Cloudflare R2 secara massal.
+- 🖥️ **Modern SaaS GUI & Dashboard**: Antarmuka web modern responsif (desain Hallmark token-based) yang dapat dibuka di browser lokal maupun desktop.
+- ⚡ **High-Speed Async Worker Pool**: Mesin crawling asinkron berbasis `asyncio` dengan konkurensi dinamis (1–20 workers secara simultan), meningkatkan kecepatan 5x–15x lipat.
+- 🏛️ **Dukungan Multi-Sumber Hukum Lengkap**:
+  - **Peraturan.go.id**: Ekstraksi hierarkis BAB, Pasal, Penjelasan, dan metadata status peraturan.
+  - **Mahkamah Agung (MA)**: Ekstraksi nomor perkara, para pihak, tingkat proses, majelis hakim, amar putusan, dan berkas salinan PDF resmi.
+  - **Mahkamah Konstitusi (MK)**: Ekstraksi putusan PUU, SKLN, PHPU, pemohon, amar putusan, dan unduhan berkas PDF dari CDN `s.mkri.id`.
+- 🛡️ **Anti-WAF TLS/JA3 Bypass**: Menggunakan `curl_cffi` dengan impersonasi profil browser Safari 17 / Chrome 120, cookie caching ke disk, dan auto-retry backoff untuk menembus proteksi Cloudflare WAF.
+- 🗄️ **Unified Database (PostgreSQL & SQLite Fallback)**:
+  - Menyimpan data ke tabel `regulations`, `legal_articles`, dan `court_decisions` di PostgreSQL `owlexia_db`.
+  - Otomatis beralih ke SQLite lokal (`ocrawler.db`) jika PostgreSQL belum diaktifkan (zero-setup desktop mode).
+- ☁️ **Cloudflare R2 Streaming Storage**: Berkas PDF otomatis diunggah ke Cloudflare R2 secara streaming tanpa membebani RAM, lalu berkas lokal dibersihkan agar harddisk server lokal tetap 0 MB terpakai.
+- 🌐 **Cloudflare Tunnel Ready**: Siap diakses secara aman dari internet melalui `https://ocrawler.sugarate.me` atau `https://ocrawler.cugarete.me`.
 
 ---
 
@@ -31,144 +38,93 @@ Proyek ini terintegrasi penuh ke dalam ekosistem kecerdasan artifisial **OWLEXIA
 
 ```mermaid
 flowchart TD
-    A["Portal peraturan.go.id"] -->|Bypass WAF via curl_cffi| B["anti_waf_crawler.py"]
-    B -->|Validasi Integritas %PDF-| C{"PDF Valid?"}
-    C -->|Gagal / Corrupt| D["Auto Retry & Rotasi Profil"]
-    D --> B
-    C -->|Valid| E["Ekstraksi Teks (pypdf)"]
-    E -->|BAB, Pasal, Penjelasan| F[("PostgreSQL: owlexia_db")]
-    E -->|Streaming Upload| G["Cloudflare R2 Bucket (owlexia-r2)"]
-    G -->|Update URL Publik CDN| F
-    G -->|Hapus Berkas Lokal| H["Disk Server Bersih (0 MB)"]
-    F -->|Retrieval & Penalaran IRAC| I["OWLEXIA Legal AI Agent"]
+    subgraph Sources ["Portal Hukum Indonesia"]
+        A["peraturan.go.id"]
+        B["putusan3.mahkamahagung.go.id (MA)"]
+        C["mkri.id (MK)"]
+    end
+
+    subgraph Core ["O-Crawler Engine (Async Worker Pool)"]
+        WAF["Anti-WAF Engine (curl_cffi TLS/JA3)"]
+        Scraper["Multi-Source Scrapers"]
+        Parser["PDF Streamer & Parser (pypdf)"]
+    end
+
+    subgraph Interface ["FastAPI SaaS GUI (Port 8080)"]
+        GUI["Modern Web GUI (HTML5/Tailwind/Lucide)"]
+        WS["WebSocket Telemetry & Live Terminal"]
+        API["REST API Control & Data Explorer"]
+    end
+
+    subgraph Storage ["Storage & Database"]
+        DB[("PostgreSQL: owlexia_db / SQLite")]
+        R2["Cloudflare R2 Bucket (Zero Egress)"]
+    end
+
+    Sources -->|Bypass WAF| WAF
+    WAF --> Scraper
+    Scraper --> Parser
+    Parser --> DB
+    Parser --> R2
+
+    GUI <--> API
+    GUI <--> WS
+    API --> Core
+    Core --> WS
 ```
 
 ---
 
-## 📋 Prasyarat Sistem
+## 🚀 Panduan Menjalankan Aplikasi
 
-- **Python**: v3.10 atau lebih baru
-- **PostgreSQL**: v15+ (direkomendasikan v17)
-- **Akun Cloudflare R2**: (Kredensial S3-compatible API token)
-
----
-
-## 🚀 Instalasi & Persiapan
-
-### 1. Clone Repositori
+### 1. Menjalankan Modern SaaS GUI (Direkomendasikan)
+Cukup jalankan skrip launcher berikut di terminal:
 ```bash
-git clone git@github.com:aryarifki/O-Crawler.git
-cd O-Crawler
+./run_gui.sh
 ```
+Aplikasi akan aktif di:
+- **Lokal Desktop / Browser**: [http://localhost:8080](http://localhost:8080)
+- **Subdomain Publik**: [https://ocrawler.sugarate.me](https://ocrawler.sugarate.me) (atau `https://ocrawler.cugarete.me`)
 
-### 2. Buat & Aktifkan Virtual Environment
+### 2. Mode Terminal CLI (Untuk Otomasi / Scripting / Cron Job)
+Anda juga dapat menjalankan crawling langsung via command line:
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+# Crawl 5 halaman UU
+./venv/bin/python anti_waf_crawler.py --category uu --pages 5
 
-### 3. Konfigurasi Lingkungan (`.env`)
-Salin file template `env.example`:
-```bash
-cp env.example .env
-```
-Sesuaikan nilai konfigurasi:
-```env
-# Koneksi Database PostgreSQL
-DATABASE_URL=postgresql://owlexia:owlexia_pass@localhost:5432/owlexia_db
+# Crawl Putusan MA via Python Scraper
+./venv/bin/python -c "
+import asyncio
+from crawler_engine import CrawlerEngine
+engine = CrawlerEngine()
+asyncio.run(engine.start_crawl({'source': 'ma', 'category': 'pidana-khusus-1', 'pages': 2, 'concurrency': 5}))
+"
 
-# Konfigurasi Cloudflare R2
-R2_ACCOUNT_ID=your_cloudflare_account_id
-R2_BUCKET_NAME=owlexia-r2
-R2_API_TOKEN=your_r2_api_token
-R2_PUBLIC_URL=https://pub-xxxxxx.r2.dev
+# Crawl Putusan MK (Pengujian UU)
+./venv/bin/python -c "
+import asyncio
+from crawler_engine import CrawlerEngine
+engine = CrawlerEngine()
+asyncio.run(engine.start_crawl({'source': 'mk', 'category': 'PUU', 'pages': 2, 'concurrency': 5}))
+"
 ```
 
 ---
 
-## 📖 Panduan Penggunaan
+## 📡 REST API & WebSocket Documentation
 
-### 1. Mode Interaktif (Wizard Paling Praktis)
-Jalankan skrip langsung di terminal Anda:
-```bash
-python3 anti_waf_crawler.py
-```
-Anda akan disambut oleh menu pemilihan kategori peraturan:
-```text
-====================================================================
-🏛️  OWLEXIA REGULATION CRAWLER - PILIH KATEGORI PERATURAN
-====================================================================
- [1]  UU          - Undang-Undang
- [2]  PP          - Peraturan Pemerintah
- [3]  PERPRES     - Peraturan Presiden
- [4]  PERPPU      - Peraturan Pemerintah Pengganti Undang-Undang
- [5]  TAPMPR      - Ketetapan MPR
- [6]  PERMEN      - Peraturan Menteri
- [7]  PERMENKUMHAM- Peraturan Menteri Hukum dan HAM
- [8]  PERMENKUM   - Peraturan Menteri Hukum
- [9]  PERBAN      - Peraturan Badan / Lembaga
- [10] PERDA       - Peraturan Daerah
- [11] ALL         - Tarik SEMUA Jenis Peraturan Sekaligus
-====================================================================
- Pilih nomor jenis peraturan [1-11]: 1
- Halaman mulai [Default: 1]: 1
- Jumlah halaman [0 = Jelajahi sampai akhir]: 10
- Jeda antar request dalam detik [Default: 2.0]: 2.0
-```
-
----
-
-## ⚡ Mode Perintah CLI (Otomasi & Scripting)
-Gunakan flag CLI untuk keperluan background task atau cron job:
-
-```bash
-# Menarik 10 halaman Undang-Undang (UU)
-python3 anti_waf_crawler.py --category uu --start-page 1 --pages 10 --limit 500
-
-# Menarik peraturan berdasarkan kata kunci dan tahun tertentu
-python3 anti_waf_crawler.py --query "perpajakan" --tahun 2026 --pages 5
-
-# Menarik semua regulasi tanpa menghapus berkas fisik PDF di lokal
-python3 anti_waf_crawler.py --category pp --keep-local-pdf
-
-# Menjalankan crawling di latar belakang (Background Process)
-nohup python3 -u anti_waf_crawler.py --category uu --pages 50 --delay 2.5 > crawler.log 2>&1 &
-```
-
-### Parameter CLI Lengkap:
-| Opsi | Tipe | Default | Deskripsi |
-| :--- | :--- | :--- | :--- |
-| `--category`, `-c` | string | `"uu"` | Kategori peraturan (`uu`, `pp`, `perpres`, `perppu`, `tapmpr`, `permen`, dll.) |
-| `--query`, `-q` | string | `""` | Kata kunci pencarian spesifik |
-| `--tahun`, `-t` | string | `""` | Filter tahun pengundangan |
-| `--start-page` | integer | `1` | Halaman awal pagination |
-| `--pages`, `-p` | integer | `0` | Jumlah halaman (`0` = jelajahi sampai halaman terakhir) |
-| `--limit`, `-l` | integer | `5000` | Batas maksimum regulasi yang diproses |
-| `--delay` | float | `2.0` | Jeda (detik) antar request untuk keamanan WAF |
-| `--keep-local-pdf` | flag | `false` | Jangan hapus PDF lokal setelah berhasil diunggah ke Cloudflare R2 |
-| `--no-db` | flag | `false` | Hanya unduh dan parse tanpa menyimpan ke PostgreSQL |
-| `--non-interactive` | flag | `false` | Lewati menu wizard interaktif |
-
----
-
-## 🗃️ Migrasi Dokumen Massal ke Cloudflare R2 (`migrate_to_r2.py`)
-Jika Anda memiliki berkas PDF lokal yang sebelumnya tersimpan di folder `pdf_peraturan/`:
-```bash
-python3 migrate_to_r2.py
-```
-Skrip ini akan secara otomatis:
-1. Mengunggah seluruh PDF ke Cloudflare R2 secara streaming.
-2. Memperbarui kolom `pdf_path` di PostgreSQL ke URL CDN publik R2.
-3. Menghapus berkas lokal yang telah terverifikasi aman di cloud.
-
----
-
-## 🔗 Ekosistem Integrasi OWLEXIA
-O-Crawler berfungsi sebagai penyedia data utama bagi:
-- **OWLEXIA Legal Reasoning Engine**: Memasok pasal-pasal terkini ke database PostgreSQL.
-- **Hierarchical Hybrid RAG**: Mengaktifkan pencarian semantik dan FTS di atas basis data peraturan terindeks.
-- **OWLEXIA REST API**: Menyediakan endpoint sinkronisasi `/api/sync-database` dan status `/api/crawler-status`.
+| Method | Endpoint | Deskripsi |
+| :--- | :--- | :--- |
+| `GET` | `/` | Dashboard Web GUI (Single-Page App) |
+| `WS` | `/ws/crawler` | Live WebSocket streaming untuk progres & terminal log |
+| `GET` | `/api/stats` | Statistik total regulasi, pasal, putusan MA & MK |
+| `GET` | `/api/crawl/status` | Status engine aktif, kecepatan (dok/dtk), progres |
+| `POST` | `/api/crawl/start` | Memulai crawl job baru (`source`, `category`, `query`, `pages`, `concurrency`) |
+| `POST` | `/api/crawl/stop` | Menghentikan crawl job yang sedang berjalan |
+| `GET` | `/api/data/regulations` | Daftar regulasi tersimpan dengan fitur pencarian |
+| `GET` | `/api/data/decisions` | Daftar putusan tersimpan (MA & MK) dengan filter lembaga |
+| `GET` | `/api/export` | Ekspor data ke format CSV atau JSON |
+| `GET` | `/api/health` | Status koneksi database, R2, dan server health |
 
 ---
 
