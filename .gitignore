@@ -1,6 +1,7 @@
 # Environment & Secrets
 .env
 .env.*
+.r2_stats_cache.json
 
 # Python Cache & Environments
 __pycache__/

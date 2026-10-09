@@ -48,11 +48,17 @@ O-Crawler bertransformasi dari skrip CLI biasa menjadi sebuah **Aplikasi Web GUI
 - 🗄️ **Unified Dual-Database Architecture**:
   - Dukungan utama: **PostgreSQL** (`owlexia_db` dengan skema terindeks).
   - Mode cadangan otomatis (*zero-setup fallback*): **SQLite** (`ocrawler.db`) jika PostgreSQL belum aktif.
-- ☁️ **Cloudflare R2 Zero-Egress Streaming Storage**:
-  - Berkas PDF yang diunduh langsung di-stream ke bucket Cloudflare R2 tanpa membebani RAM server lokal.
-  - Manajemen unduhan berkas statis otomatis via `/pdf_downloads/{filename}`.
+- ☁️ **Cloudflare R2 Storage & Streaming Reverse Proxy Anti-Blokir**:
+  - Seluruh berkas dokumen PDF disimpan di bucket Cloudflare R2 (`owlexia-r2`) dengan biaya egress $0 rupiah.
+  - **Streaming Reverse Proxy (`/api/pdf/{filename}`)**: Server bertindak sebagai perantara streaming cerdas yang mengambil berkas dari Cloudflare R2 secara real-time dan menyajikannya langsung ke browser pengguna, mem-bypass sensor dan DNS poisoning domain `*.r2.dev` oleh ISP di Indonesia.
+  - Dashboard analitik real-time memantau kapasitas objek (728+ dokumen) dan total volume data di bucket Cloudflare R2 secara real-time.
+- 🎨 **Investowl & Material 3 Dark Theme Experience**:
+  - Antarmuka modern dengan palette warna hangat khas Investowl (`#141210`, `#211D1A`, `#FFB879`).
+  - Navigasi bawah (*Bottom Navigation Bar*) minimalis berbasis ikon.
+  - Pemisahan modul halaman: Crawler Studio, Data Explorer, Analitik & Penyimpanan Real-Time, serta Informasi Aplikasi (About).
+  - Status persistensi navigasi (anti-reset saat refresh halaman browser).
 - 📊 **Interactive Data Explorer & Export**:
-  - Pencarian langsung (*live search*), filter per lembaga pengadilan, pratinjau teks amar putusan, tautan unduh PDF langsung.
+  - Pencarian langsung (*live search*), filter per lembaga pengadilan, pratinjau teks amar putusan, tautan streaming PDF langsung.
   - Ekspor instan seluruh data hasil crawling ke format **CSV** dan **JSON**.
 
 ---
@@ -76,18 +82,18 @@ flowchart TD
 
     subgraph Interface ["FastAPI SaaS GUI & REST Engine"]
         API["FastAPI REST Endpoints (Port 8080)"]
+        Proxy["Streaming Reverse Proxy (/api/pdf/...)"]
         WS["WebSocket Telemetry & Live Terminal (/ws/crawler)"]
-        UI["Modern Web GUI (HTML5 / Tailwind CSS / Vanilla JS)"]
+        UI["Investowl Web GUI (Tailwind CSS / Material 3)"]
     end
 
     subgraph Storage ["Penyimpanan Data & Dokumen"]
         DB[("PostgreSQL (owlexia_db) / SQLite Fallback")]
-        R2[("Cloudflare R2 Object Storage")]
-        LocalPDF["Local Storage (/pdf_downloads/)"]
+        R2[("Cloudflare R2 Object Storage (owlexia-r2)")]
     end
 
     subgraph Tunnel ["Akses Publik"]
-        CF["Cloudflare Tunnel (ocrawler.cugarete.me)"]
+        CF["Cloudflare Tunnel (cugarete.me)"]
     end
 
     Sources -->|Bypass Cloudflare WAF| WAF
@@ -96,15 +102,16 @@ flowchart TD
     Engine --> PDFParser
     PDFParser --> DB
     PDFParser --> R2
-    PDFParser --> LocalPDF
 
     Engine -->|Kirim Event & Log| WS
     API <--> DB
-    API <--> LocalPDF
+    Proxy <-->|Streaming Fetch (Bypass ISP)| R2
     UI <--> API
+    UI <--> Proxy
     UI <--> WS
 
     CF <--> API
+    CF <--> Proxy
     CF <--> UI
 ```
 

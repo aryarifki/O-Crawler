@@ -557,6 +557,16 @@ class DatabaseManager:
             return None
 
     # --- STATS & DATA QUERIES ---
+    @staticmethod
+    def _format_bytes(b: int) -> str:
+        if b >= 1024 * 1024 * 1024:
+            return f"{b / (1024 * 1024 * 1024):.2f} GB"
+        if b >= 1024 * 1024:
+            return f"{b / (1024 * 1024):.2f} MB"
+        if b >= 1024:
+            return f"{b / 1024:.1f} KB"
+        return f"{b} B"
+
     def get_stats(self) -> Dict[str, Any]:
         cur = self.conn.cursor()
         stats = {
@@ -567,6 +577,11 @@ class DatabaseManager:
             "decisions_ma": 0,
             "decisions_mk": 0,
             "recent_jobs": [],
+            "db_size_bytes": 0,
+            "db_size_pretty": "0 KB",
+            "pdf_count": 0,
+            "pdf_size_bytes": 0,
+            "pdf_size_pretty": "0 MB",
         }
         try:
             cur.execute("SELECT COUNT(*) FROM regulations")
@@ -583,6 +598,52 @@ class DatabaseManager:
 
             cur.execute("SELECT COUNT(*) FROM court_decisions WHERE UPPER(lembaga) = 'MK'")
             stats["decisions_mk"] = cur.fetchone()[0] or 0
+
+            # DB File / Schema Size
+            if self.is_postgres:
+                try:
+                    cur.execute("SELECT pg_database_size(current_database())")
+                    row = cur.fetchone()
+                    sz = row[0] if row else 0
+                    stats["db_size_bytes"] = sz
+                    stats["db_size_pretty"] = self._format_bytes(sz)
+                except Exception:
+                    pass
+            else:
+                try:
+                    p = Path(self.sqlite_path)
+                    sz = p.stat().st_size if p.exists() else 0
+                    stats["db_size_bytes"] = sz
+                    stats["db_size_pretty"] = self._format_bytes(sz)
+                except Exception:
+                    pass
+
+            # Storage Metrics (Prioritaskan Cloudflare R2 Object Storage)
+            try:
+                from r2_storage import R2StorageClient
+                r2 = R2StorageClient()
+                if r2.is_configured():
+                    r2_info = r2.get_bucket_stats()
+                    stats["storage_mode"] = "Cloudflare R2 CDN"
+                    stats["pdf_count"] = r2_info.get("total_objects", 0)
+                    stats["pdf_size_bytes"] = r2_info.get("total_size_bytes", 0)
+                    stats["pdf_size_pretty"] = r2_info.get("total_size_pretty", "0 MB")
+                    stats["r2_bucket"] = r2_info.get("bucket_name", "owlexia-r2")
+                    stats["r2_public_url"] = r2_info.get("public_url", "")
+                    stats["r2_active"] = True
+                else:
+                    pdf_dir = Path(__file__).resolve().parent / "pdf_downloads"
+                    if pdf_dir.exists():
+                        pdf_files = [f for f in pdf_dir.iterdir() if f.is_file() and f.suffix.lower() == ".pdf"]
+                        stats["pdf_count"] = len(pdf_files)
+                        tot_sz = sum(f.stat().st_size for f in pdf_files)
+                        stats["pdf_size_bytes"] = tot_sz
+                        stats["pdf_size_pretty"] = self._format_bytes(tot_sz)
+                        stats["storage_mode"] = "Penyimpanan Lokal VPS"
+                        stats["r2_active"] = False
+            except Exception:
+                pass
+
 
             # Jobs
             cur.execute("SELECT job_id, source, category, query, total_crawled, status, started_at FROM crawl_jobs ORDER BY id DESC LIMIT 5")

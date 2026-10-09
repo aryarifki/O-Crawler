@@ -10,12 +10,14 @@ import json
 import csv
 import io
 import asyncio
+import urllib.request
+import urllib.parse
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -214,7 +216,7 @@ PDF_DIR.mkdir(parents=True, exist_ok=True)
 @app.get("/root/O-Crawler/pdf_downloads/{filename}")
 @app.get("/api/pdf/{filename}")
 async def serve_downloaded_pdf(filename: str):
-    """Menyajikan berkas PDF lokal langsung ke browser / download."""
+    """Menyajikan berkas PDF: langsung dari disk jika ada, atau Streaming Reverse Proxy dari Cloudflare R2."""
     clean_name = Path(filename).name
     file_path = PDF_DIR / clean_name
     if file_path.is_file():
@@ -223,7 +225,46 @@ async def serve_downloaded_pdf(filename: str):
             media_type="application/pdf",
             headers={"Content-Disposition": f"inline; filename=\"{clean_name}\""},
         )
-    raise HTTPException(status_code=404, detail=f"Berkas PDF '{clean_name}' tidak ditemukan di server.")
+    
+    # Streaming Reverse Proxy dari Cloudflare R2 (Bypass sensor/DNS poison ISP Indonesia pada domain *.r2.dev)
+    r2_public = os.getenv("R2_PUBLIC_URL", "https://pub-fddf013852d24f71b86c70d2a2555e13.r2.dev").rstrip("/")
+    target_url = f"{r2_public}/{urllib.parse.quote(clean_name)}"
+    try:
+        req = urllib.request.Request(
+            target_url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) O-Crawler-Proxy/2.0"}
+        )
+        resp = urllib.request.urlopen(req, timeout=30)
+        content_length = resp.headers.get("Content-Length")
+        headers = {
+            "Content-Disposition": f"inline; filename=\"{clean_name}\"",
+            "Cache-Control": "public, max-age=86400",
+            "Accept-Ranges": "bytes",
+        }
+        if content_length:
+            headers["Content-Length"] = content_length
+
+        def file_iterator():
+            try:
+                while True:
+                    chunk = resp.read(64 * 1024)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                resp.close()
+
+        return StreamingResponse(
+            file_iterator(),
+            media_type="application/pdf",
+            headers=headers
+        )
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise HTTPException(status_code=404, detail=f"Berkas PDF '{clean_name}' tidak ditemukan di Cloudflare R2 maupun lokal.")
+        raise HTTPException(status_code=e.code, detail=f"Gagal mengambil PDF dari Cloudflare R2: {e.reason}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Kesalahan proxy streaming PDF: {str(e)}")
 
 
 # Mount PDF downloads directory

@@ -1,63 +1,250 @@
-/* O-Crawler Modern SaaS Stylesheet */
+/* ==========================================================================
+   O-Crawler - Investowl Theme & Design System
+   Exact Color Palette, Typography & Bottom Navigation from Investowl
+   ========================================================================== */
 
 :root {
-  --bg-primary: #020617;
-  --bg-card: rgba(15, 23, 42, 0.6);
-  --border-color: rgba(30, 41, 59, 0.8);
-  --accent-color: #6366f1;
+  /* =========================================================
+     MD3 DARK THEME (Investowl Palette)
+     ========================================================= */
+  --md-sys-color-surface: #141210;
+  --md-sys-color-on-surface: #EBE0D9;
+  --md-sys-color-on-surface-variant: #D7C2B4;
+  
+  --md-sys-color-surface-container-lowest: #0B0A08;
+  --md-sys-color-surface-container-low: #1C1916;
+  --md-sys-color-surface-container: #211D1A;
+  --md-sys-color-surface-container-high: #2B2622;
+  --md-sys-color-surface-container-highest: #36302A;
+  
+  --md-sys-color-primary: #FFB879;
+  --md-sys-color-on-primary: #4B2800;
+  --md-sys-color-primary-container: #6B3B00;
+  --md-sys-color-on-primary-container: #FFDCC2;
+  
+  --md-sys-color-outline: #9F8D83;
+  --md-sys-color-outline-variant: #52443C;
+
+  /* Custom Accessible Colors for Financial & Legal Status */
+  --color-positive: #10B981; /* Bright Emerald */
+  --color-negative: #F43F5E; /* Bright Rose */
+  --color-warning: #F59E0B;  /* Amber */
+
+  /* Legacy Compat & Helpers */
+  --bg-primary: var(--md-sys-color-surface);
+  --bg-surface: var(--md-sys-color-surface-container);
+  --bg-surface-elevated: var(--md-sys-color-surface-container-high);
+  --border-subtle: var(--md-sys-color-outline-variant);
+  --border-highlight: var(--md-sys-color-outline);
+  --text-primary: var(--md-sys-color-on-surface);
+  --text-secondary: var(--md-sys-color-on-surface-variant);
+  --text-muted: #9F8D83;
+
+  /* M3 Shape Tokens */
+  --md-sys-shape-corner-small: 8px;
+  --md-sys-shape-corner-medium: 14px;
+  --md-sys-shape-corner-large: 20px;
+  --md-sys-shape-corner-extra-large: 28px;
+  --md-sys-shape-corner-full: 9999px;
+
+  /* M3 Motion & Transitions */
+  --md-sys-motion-easing-expressive: cubic-bezier(0.34, 1.2, 0.64, 1);
+  --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --md-sys-motion-duration-short: 150ms;
+  --md-sys-motion-duration-medium: 250ms;
+  --md-sys-motion-duration-long: 400ms;
 }
 
 body {
-  background-color: var(--bg-primary);
+  background-color: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11", "tnum";
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.nav-tab {
-  color: #94a3b8;
-  border-color: transparent;
+/* --- Surfaces --- */
+.m3-surface {
+  background-color: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
 }
 
-.nav-tab:hover {
-  color: #e2e8f0;
+.m3-surface:hover {
+  border-color: var(--md-sys-color-outline);
 }
 
-.nav-tab.active {
-  color: #818cf8;
-  border-color: #6366f1;
+.m3-surface-interactive {
+  background-color: var(--md-sys-color-surface-container);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-large);
+  transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-expressive);
 }
 
-.source-card {
-  background: rgba(15, 23, 42, 0.5);
-  border-color: rgba(51, 65, 85, 0.6);
+.m3-surface-interactive:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 184, 121, 0.45);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(255, 184, 121, 0.1);
+}
+
+/* --- Investowl Bottom Navigation Bar (Icon Only) --- */
+.investowl-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  background: rgba(33, 29, 26, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  z-index: 50;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.investowl-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 10px 0;
+  background: transparent;
+  border: none;
   cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.investowl-icon-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 38px;
+  border-radius: 14px;
+  color: var(--md-sys-color-on-surface-variant);
+  background: transparent;
+  transition: all 0.2s cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+
+.investowl-nav-item:hover .investowl-icon-box {
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container-high);
+}
+
+.investowl-nav-item.active .investowl-icon-box {
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-primary);
+  box-shadow: 0 2px 10px rgba(107, 59, 0, 0.4), inset 0 1px 0 rgba(255, 184, 121, 0.25);
+  border: 1px solid rgba(255, 184, 121, 0.3);
+  transform: scale(1.06);
+}
+
+.investowl-nav-item.active i,
+.investowl-nav-item.active svg {
+  color: var(--md-sys-color-primary) !important;
+}
+
+.investowl-nav-item:active .investowl-icon-box {
+  transform: scale(0.95);
+}
+
+/* Compatibility helper for legacy class */
+.m3-nav-tab.active {
+  color: var(--md-sys-color-primary);
+}
+
+/* --- M3 Buttons (Investowl Style) --- */
+.m3-btn-primary {
+  background: linear-gradient(135deg, #FFB879 0%, #E68A35 100%);
+  color: #4B2800;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-weight: 700;
+  transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-expressive);
+  box-shadow: 0 4px 15px rgba(255, 184, 121, 0.25);
+  border: none;
+}
+
+.m3-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(255, 184, 121, 0.4);
+}
+
+.m3-btn-primary:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.m3-btn-tonal {
+  background: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-full);
+  font-weight: 600;
+  transition: all var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
+}
+
+.m3-btn-tonal:hover:not(:disabled) {
+  background: var(--md-sys-color-surface-container-highest);
+  border-color: var(--md-sys-color-outline);
+  color: #ffffff;
+}
+
+/* --- Source Cards --- */
+.source-card {
+  background: var(--md-sys-color-surface-container-low);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+  cursor: pointer;
+  transition: all var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-expressive);
 }
 
 .source-card:hover {
-  border-color: rgba(99, 102, 241, 0.4);
-  background: rgba(30, 41, 59, 0.4);
+  background: var(--md-sys-color-surface-container);
+  border-color: rgba(255, 184, 121, 0.3);
+  transform: translateY(-2px);
 }
 
 .source-card.active {
-  border-color: #6366f1;
-  background: rgba(99, 102, 241, 0.12);
-  box-shadow: 0 0 15px rgba(99, 102, 241, 0.15);
+  background: rgba(255, 184, 121, 0.12);
+  border-color: #FFB879;
+  box-shadow: 0 0 20px rgba(255, 184, 121, 0.18), inset 0 0 10px rgba(255, 184, 121, 0.05);
 }
 
-/* Custom Scrollbar for Terminal */
-#terminal-logs::-webkit-scrollbar {
+/* --- Custom Scrollbars (Investowl Style) --- */
+::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--md-sys-color-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--md-sys-color-surface-container-highest);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-sys-color-outline);
 }
 
+#terminal-logs::-webkit-scrollbar {
+  width: 5px;
+}
 #terminal-logs::-webkit-scrollbar-track {
-  background: rgba(2, 6, 23, 0.7);
+  background: var(--md-sys-color-surface-container-lowest);
 }
-
 #terminal-logs::-webkit-scrollbar-thumb {
-  background: rgba(51, 65, 85, 0.7);
+  background: var(--md-sys-color-surface-container-highest);
   border-radius: 9999px;
 }
-
 #terminal-logs::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.9);
+  background: var(--md-sys-color-outline);
 }
 
 /* Log entry styles */
@@ -65,50 +252,125 @@ body {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
-  line-height: 1.4;
+  line-height: 1.45;
   word-break: break-all;
 }
 
 .log-time {
-  color: #64748b;
-  font-size: 0.7rem;
+  color: var(--md-sys-color-outline);
+  font-size: 0.68rem;
   flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .log-badge {
-  font-size: 0.65rem;
-  padding: 0.1rem 0.35rem;
-  border-radius: 0.25rem;
-  font-weight: 600;
+  font-size: 0.62rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-weight: 700;
   flex-shrink: 0;
+  letter-spacing: 0.03em;
 }
 
 .log-badge.info {
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(255, 184, 121, 0.16);
+  color: #FFB879;
+  border: 1px solid rgba(255, 184, 121, 0.3);
 }
 
 .log-badge.success {
-  background: rgba(16, 185, 129, 0.15);
-  color: #34d399;
+  background: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
 .log-badge.warning {
-  background: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
   border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
 .log-badge.error {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: rgba(244, 63, 94, 0.16);
+  color: #fda4af;
+  border: 1px solid rgba(244, 63, 94, 0.3);
 }
 
 .log-badge.debug {
-  background: rgba(148, 163, 184, 0.15);
-  color: #94a3b8;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(159, 141, 131, 0.16);
+  color: #D7C2B4;
+  border: 1px solid rgba(159, 141, 131, 0.3);
+}
+
+/* --- M3 Loading Overlay & Spinner Animation (Investowl Style) --- */
+.m3-spinner {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3.5px solid rgba(255, 184, 121, 0.15);
+  border-top-color: #FFB879;
+  border-right-color: #F59E0B;
+  animation: m3-spin 0.85s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes m3-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.m3-pulse-glow {
+  animation: m3-pulse 2s infinite;
+}
+
+@keyframes m3-pulse {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(255, 184, 121, 0.2);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 184, 121, 0.35);
+    transform: scale(1.02);
+  }
+}
+
+/* Shimmer Progress */
+.m3-shimmer-bar {
+  background: linear-gradient(90deg, rgba(255, 184, 121, 0.1) 0%, rgba(255, 184, 121, 0.4) 50%, rgba(255, 184, 121, 0.1) 100%);
+  background-size: 200% 100%;
+  animation: m3-shimmer 1.5s infinite;
+}
+
+@keyframes m3-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Fade in for tab switching */
+.tab-fade-in {
+  animation: m3-fade-in 240ms cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+
+@keyframes m3-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --- Utility & Safety Overrides --- */
+.hidden {
+  display: none !important;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
