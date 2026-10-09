@@ -15,7 +15,7 @@ from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -205,6 +205,29 @@ async def health_check():
         "crawler_active": engine.is_running,
     }
 
+
+PDF_DIR = Path(__file__).resolve().parent / "pdf_downloads"
+PDF_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.get("/pdf_downloads/{filename}")
+@app.get("/root/O-Crawler/pdf_downloads/{filename}")
+@app.get("/api/pdf/{filename}")
+async def serve_downloaded_pdf(filename: str):
+    """Menyajikan berkas PDF lokal langsung ke browser / download."""
+    clean_name = Path(filename).name
+    file_path = PDF_DIR / clean_name
+    if file_path.is_file():
+        return FileResponse(
+            path=str(file_path),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename=\"{clean_name}\""},
+        )
+    raise HTTPException(status_code=404, detail=f"Berkas PDF '{clean_name}' tidak ditemukan di server.")
+
+
+# Mount PDF downloads directory
+app.mount("/pdf_downloads", StaticFiles(directory=str(PDF_DIR)), name="pdf_downloads")
 
 # Mount Static Frontend
 app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="static")

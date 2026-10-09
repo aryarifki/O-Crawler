@@ -312,6 +312,13 @@ async function fetchExplorerData() {
   }
 }
 
+function formatPdfUrl(path) {
+  if (!path) return '';
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  const filename = path.split('/').pop();
+  return `/pdf_downloads/${encodeURIComponent(filename)}`;
+}
+
 function renderTable(items) {
   const headers = document.getElementById('table-headers');
   const tbody = document.getElementById('table-body');
@@ -332,13 +339,14 @@ function renderTable(items) {
     items.forEach(it => {
       const tr = document.createElement('tr');
       tr.className = 'hover:bg-slate-900/40 transition';
+      const pdfUrl = formatPdfUrl(it.pdf_path);
       tr.innerHTML = `
         <td class="py-3 px-4 font-semibold text-white whitespace-nowrap">${it.jenis} No. ${it.nomor}</td>
         <td class="py-3 px-4 text-slate-400">${it.tahun}</td>
         <td class="py-3 px-4 max-w-md truncate" title="${it.judul}">${it.judul}</td>
         <td class="py-3 px-4"><span class="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 font-mono text-[11px]">${it.total_pasal || 0} Pasal</span></td>
         <td class="py-3 px-4 text-right whitespace-nowrap">
-          ${it.pdf_path ? `<a href="${it.pdf_path}" target="_blank" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-lg mr-1 inline-flex items-center space-x-1"><span>PDF</span></a>` : ''}
+          ${pdfUrl ? `<a href="${pdfUrl}" target="_blank" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-lg mr-1 inline-flex items-center space-x-1"><span>PDF</span></a>` : ''}
           <button onclick='viewRegulationDetail(${JSON.stringify(it).replace(/'/g, "&#39;")})' class="px-2.5 py-1 text-xs bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600 hover:text-white rounded-lg">Detail</button>
         </td>
       `;
@@ -361,13 +369,14 @@ function renderTable(items) {
       const tr = document.createElement('tr');
       tr.className = 'hover:bg-slate-900/40 transition';
       const badgeColor = it.lembaga === 'MA' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400';
+      const pdfUrl = formatPdfUrl(it.pdf_path);
       tr.innerHTML = `
         <td class="py-3 px-4"><span class="px-2 py-0.5 rounded font-bold text-[10px] ${badgeColor}">${it.lembaga}</span></td>
         <td class="py-3 px-4 font-semibold text-white whitespace-nowrap">${it.nomor_perkara}</td>
         <td class="py-3 px-4 text-slate-400">${it.tahun || '-'}</td>
         <td class="py-3 px-4 max-w-md truncate" title="${it.amar_putusan || it.judul}">${it.amar_putusan || it.judul}</td>
         <td class="py-3 px-4 text-right whitespace-nowrap">
-          ${it.pdf_path ? `<a href="${it.pdf_path}" target="_blank" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-lg mr-1 inline-flex items-center space-x-1"><span>PDF</span></a>` : ''}
+          ${pdfUrl ? `<a href="${pdfUrl}" target="_blank" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-lg mr-1 inline-flex items-center space-x-1"><span>PDF</span></a>` : ''}
           <button onclick='viewDecisionDetail(${JSON.stringify(it).replace(/'/g, "&#39;")})' class="px-2.5 py-1 text-xs bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600 hover:text-white rounded-lg">Detail</button>
         </td>
       `;
@@ -397,7 +406,7 @@ function viewRegulationDetail(it) {
     </div>
     ${it.pdf_path ? `
     <div class="pt-2">
-      <a href="${it.pdf_path}" target="_blank" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center justify-center space-x-2 font-medium">
+      <a href="${formatPdfUrl(it.pdf_path)}" target="_blank" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center justify-center space-x-2 font-medium">
         <span>Buka / Unduh Berkas Salinan Asli (PDF)</span>
       </a>
     </div>` : ''}
@@ -424,7 +433,7 @@ function viewDecisionDetail(it) {
     </div>
     ${it.pdf_path ? `
     <div class="pt-2">
-      <a href="${it.pdf_path}" target="_blank" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center justify-center space-x-2 font-medium">
+      <a href="${formatPdfUrl(it.pdf_path)}" target="_blank" class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center justify-center space-x-2 font-medium">
         <span>Buka / Unduh Berkas Putusan Resmi (PDF)</span>
       </a>
     </div>` : ''}

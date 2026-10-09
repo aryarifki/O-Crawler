@@ -228,7 +228,7 @@ class CrawlerEngine:
 
                     pdf_name = f"{meta['jenis']}_{meta['nomor']}_{meta['tahun']}.pdf".replace("/", "_").replace(" ", "_")
                     dest_pdf = self.pdf_dir / pdf_name
-                    meta["pdf_path"] = str(dest_pdf)
+                    meta["pdf_path"] = f"/pdf_downloads/{pdf_name}"
 
                     # Download PDF
                     ok = await loop.run_in_executor(None, scraper.client.download_pdf, meta["pdf_url"], dest_pdf)
@@ -313,7 +313,7 @@ class CrawlerEngine:
                     if meta.get("pdf_url"):
                         pdf_name = f"MA_{meta['nomor_perkara'].replace('/', '_').replace(' ', '_')}.pdf"
                         dest_pdf = self.pdf_dir / pdf_name
-                        meta["pdf_path"] = str(dest_pdf)
+                        meta["pdf_path"] = f"/pdf_downloads/{pdf_name}"
 
                         ok = await loop.run_in_executor(None, scraper.client.download_pdf, meta["pdf_url"], dest_pdf)
                         if ok and dest_pdf.exists():
@@ -384,7 +384,7 @@ class CrawlerEngine:
                     if item.get("pdf_url"):
                         pdf_name = f"MK_{item['nomor_perkara'].replace('/', '_').replace(' ', '_')}.pdf"
                         dest_pdf = self.pdf_dir / pdf_name
-                        item["pdf_path"] = str(dest_pdf)
+                        item["pdf_path"] = f"/pdf_downloads/{pdf_name}"
 
                         ok = await loop.run_in_executor(None, scraper.client.download_pdf, item["pdf_url"], dest_pdf)
                         if ok and dest_pdf.exists():
