@@ -1,8 +1,6 @@
 """Scraper Direktori Putusan Mahkamah Konstitusi RI (mkri.id).
 
-Mendukung pencarian putusan pengujian undang-undang (PUU), sengketa kewenangan
-lembaga negara (SKLN), dan perselisihan hasil pemilu/pilkada (PHPU/PHPKADA),
-serta download berkas PDF dari CDN resmi s.mkri.id.
+Mendukung ekstraksi pokok perkara, pemohon, amar putusan, dan jenis amar secara konsisten.
 """
 from __future__ import annotations
 import re
@@ -40,7 +38,6 @@ class MKScraper:
         return url
 
     def get_document_items(self, category: str = "", query: str = "", tahun: str = "", page: int = 1) -> List[Dict[str, Any]]:
-        """Mengambil data kartu putusan MK langsung dari halaman direktori."""
         url = self.build_list_url(category=category, query=query, tahun=tahun, page=page)
         resp = self.client.get(url, timeout=25)
         if not resp:
@@ -70,47 +67,68 @@ class MKScraper:
                 m = re.search(pattern, text, re.DOTALL | re.IGNORECASE)
                 return m.group(1).strip() if m else ""
 
-            no_perkara = extract_field("No Perkara", ["Pokok Perkara", "Pemohon", "Amar Putusan", "File Pendukung"])
-            pokok = extract_field("Pokok Perkara", ["Pemohon", "Amar Putusan", "File Pendukung"])
-            pemohon = extract_field("Pemohon", ["Amar Putusan", "File Pendukung"])
-            amar = extract_field("Amar Putusan", ["File Pendukung"])
+            all_labels = ["Pokok Perkara", "Pemohon", "Amar Putusan", "Jenis Amar Putusan", "Di Unduh", "Kata Kunci", "File Pendukung"]
+            no_perkara = extract_field("No Perkara", ["Pokok Perkara", "Pemohon", "Amar Putusan", "Jenis Amar Putusan", "Di Unduh", "File Pendukung"])
+            pokok = extract_field("Pokok Perkara", ["Pemohon", "Amar Putusan", "Jenis Amar Putusan", "Di Unduh", "File Pendukung"])
+            pemohon = extract_field("Pemohon", ["Amar Putusan", "Jenis Amar Putusan", "Di Unduh", "File Pendukung"])
+            amar = extract_field("Amar Putusan", ["Jenis Amar Putusan", "Di Unduh", "Kata Kunci", "File Pendukung"])
+            jenis_amar = extract_field("Jenis Amar Putusan", ["Di Unduh", "Kata Kunci", "File Pendukung"])
 
-            # Cari tahun dari nomor perkara (misal: 322/PUU-XXIV/2026 -> 2026)
+            if not no_perkara or no_perkara in ["-", "—"]:
+                continue
+
             yr_m = re.search(r"/(20\d\d)", no_perkara)
             tahun_int = int(yr_m.group(1)) if yr_m else 2026
+
+            # Gabungkan amar dengan jenis amar jika ada
+            final_amar = amar
+            if jenis_amar and jenis_amar not in amar:
+                final_amar = f"[{jenis_amar}] {amar}" if amar else jenis_amar
 
             item = {
                 "source": "mk",
                 "lembaga": "MK",
                 "sumber_url": url,
-                "nomor_perkara": no_perkara or f"Putusan MK {len(items)+1}",
+                "nomor_perkara": no_perkara,
                 "tingkat_proses": "Tingkat Pertama dan Terakhir",
                 "klasifikasi": category.upper() if category else "PUU",
                 "tahun": tahun_int,
                 "judul": f"Putusan MK No. {no_perkara}: {pokok[:120]}..." if pokok else f"Putusan MK No. {no_perkara}",
                 "para_pihak": f"Pemohon: {pemohon}" if pemohon else "",
                 "majelis_hakim": "Mahkamah Konstitusi RI",
-                "amar_putusan": amar,
+                "amar_putusan": final_amar,
                 "tanggal_putus": "",
                 "status": "BERKEKUATAN HUKUM TETAP",
                 "pdf_url": pdf_url,
-                "metadata": {"pokok_perkara": pokok, "pemohon": pemohon},
+                "metadata": {
+                    "pokok_perkara": pokok,
+                    "pemohon": pemohon,
+                    "jenis_amar": jenis_amar,
+                },
             }
             items.append(item)
 
         return items
 
     @staticmethod
-    def extract_pdf_summary(pdf_path: Path) -> str:
-        """Mengekstrak teks ringkasan amar dari PDF putusan MK."""
+    def extract_amar_from_pdf(pdf_path: Path) -> str:
+        """Mengekstrak teks amar putusan MK dari PDF."""
         try:
             reader = PdfReader(str(pdf_path))
             num_pages = len(reader.pages)
             if num_pages == 0:
                 return ""
-            # Baca halaman terakhir tempat amar putusan diletakkan
-            pages_to_read = [max(0, num_pages - 2), max(0, num_pages - 1)]
-            text = " ".join([reader.pages[p].extract_text() or "" for p in pages_to_read])
-            return text[:4000].strip()
+            for p_idx in range(num_pages - 1, max(-1, num_pages - 8), -1):
+                text = reader.pages[p_idx].extract_text() or ""
+                m = re.search(r'(?:M\s*E\s*N\s*G\s*A\s*D\s*I\s*L\s*I|MENGADILI)\s*[:;]\s*(.*?)(?:Demikianlah|Ditetapkan|$)', text, re.DOTALL | re.IGNORECASE)
+                if m:
+                    extracted = re.sub(r'\s+', ' ', m.group(1)).strip()
+                    if len(extracted) > 10:
+                        return extracted[:1000]
         except Exception:
-            return ""
+            pass
+        return ""
+
+    @staticmethod
+    def extract_pdf_summary(pdf_path: Path) -> str:
+        return MKScraper.extract_amar_from_pdf(pdf_path)

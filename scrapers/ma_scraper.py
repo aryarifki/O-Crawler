@@ -1,7 +1,7 @@
 """Scraper Direktori Putusan Mahkamah Agung RI (putusan3.mahkamahagung.go.id).
 
-Mendukung pencarian berdasarkan kategori, kata kunci, tingkat proses (Kasasi, PK, dll.),
-serta pengunduhan berkas PDF salinan putusan resmi.
+Mendukung pencarian berdasarkan kategori, kata kunci, tingkat proses,
+serta ekstraksi amar putusan yang konsisten (baik dari tabel web maupun dari PDF).
 """
 from __future__ import annotations
 import re
@@ -39,7 +39,6 @@ class MAScraper:
     def build_list_url(self, category: str = "", query: str = "", tahun: str = "", page: int = 1) -> str:
         page_suffix = f"/page/{page}.html" if page > 1 else ".html"
         if query:
-            # Search global
             if page > 1:
                 return f"{MA_BASE_URL}/search.html?q={query}&page={page}"
             return f"{MA_BASE_URL}/search.html?q={query}"
@@ -48,7 +47,6 @@ class MAScraper:
         elif category:
             return f"{MA_BASE_URL}/direktori/index/kategori/{category}{page_suffix}"
         else:
-            # Default ke Kasasi/Putusan Mahkamah Agung
             return f"{MA_BASE_URL}/direktori/index/kategori/pidana-khusus-1{page_suffix}"
 
     def get_document_links(self, category: str = "", query: str = "", tahun: str = "", page: int = 1) -> List[str]:
@@ -74,6 +72,12 @@ class MAScraper:
 
         soup = bs4.BeautifulSoup(resp.text, "html.parser")
 
+        # Cek apakah halaman kosong / direktori rusak
+        h1 = soup.find(["h1", "h2", "h3"])
+        h1_text = h1.get_text(strip=True) if h1 else ""
+        if h1_text.lower() == "direktori" and not soup.find_all("tr"):
+            return None
+
         meta: Dict[str, Any] = {
             "source": "ma",
             "lembaga": "MA",
@@ -93,6 +97,11 @@ class MAScraper:
         }
 
         hakim_parts = []
+        amar_ringkas = ""
+        amar_lainnya = ""
+        catatan_amar = ""
+        klasifikasi_val = ""
+
         for tr in soup.find_all("tr"):
             text = tr.get_text(" | ", strip=True)
             if " | " in text:
@@ -100,13 +109,17 @@ class MAScraper:
                 k = parts[0].lower().strip()
                 v = parts[1].strip()
 
-                if "nomor" in k and "register" not in k:
-                    meta["nomor_perkara"] = v
+                if k == "nomor" or (k.startswith("nomor") and "register" not in k):
+                    if v and v not in ["—", "-"]:
+                        meta["nomor_perkara"] = v
                 elif "tingkat" in k:
                     meta["tingkat_proses"] = v
                 elif "klasifikasi" in k:
-                    meta["klasifikasi"] = v
-                elif "tahun" in k and "register" not in k:
+                    klasifikasi_val = v.replace("->", "•").replace("|", "•")
+                    meta["klasifikasi"] = klasifikasi_val
+                elif "kata kunci" in k:
+                    meta["metadata"]["kata_kunci"] = v
+                elif k == "tahun" or ("tahun" in k and "register" not in k):
                     try:
                         meta["tahun"] = int(v)
                     except ValueError:
@@ -119,21 +132,45 @@ class MAScraper:
                     hakim_parts.append(f"Panitera: {v}")
                 elif "tanggal" in k and "register" not in k and not meta["tanggal_putus"]:
                     meta["tanggal_putus"] = v
-                elif "amar" in k:
-                    meta["amar_putusan"] = v
+                elif k == "amar lainnya":
+                    if v and v not in ["—", "-"]:
+                        amar_lainnya = v
+                elif k == "amar":
+                    if v and v not in ["—", "-"]:
+                        amar_ringkas = v
+                elif k == "catatan amar":
+                    if v and v not in ["—", "-"]:
+                        catatan_amar = v
+                elif k == "kaidah":
+                    meta["metadata"]["kaidah"] = v
+                elif k == "abstrak":
+                    meta["metadata"]["abstrak"] = v
+
+        # Validasi nomor perkara: jangan simpan jika tidak ada nomor valid
+        if not meta["nomor_perkara"] or meta["nomor_perkara"] in ["-", "—"]:
+            return None
 
         if hakim_parts:
             meta["majelis_hakim"] = "; ".join(hakim_parts)
 
-        # Cari para pihak dan ringkasan judul
-        for el in soup.find_all(["p", "div", "td", "span"]):
-            t = el.get_text(strip=True)
-            if (" VS " in t or "Penggugat" in t or "Pemohon" in t) and len(t) < 450:
-                if "—" in t:
+        # Penentuan Amar Putusan secara prioritas:
+        if amar_lainnya:
+            meta["amar_putusan"] = amar_lainnya
+        elif amar_ringkas and amar_ringkas.lower() != "lain-lain":
+            meta["amar_putusan"] = amar_ringkas
+        elif catatan_amar:
+            meta["amar_putusan"] = catatan_amar
+
+        # Ekstraksi Para Pihak dari H2 atau TR pertama
+        h2 = soup.find(["h2", "h3"])
+        if h2 and "—" in h2.get_text():
+            meta["para_pihak"] = h2.get_text().split("—", 1)[1].strip()
+        else:
+            for tr in soup.find_all("tr"):
+                t = tr.get_text(" ", strip=True)
+                if "—" in t and ("Nomor" in t or "Tanggal" in t):
                     meta["para_pihak"] = t.split("—", 1)[1].strip()
-                else:
-                    meta["para_pihak"] = t
-                break
+                    break
 
         # Cari URL download PDF
         for a in soup.find_all("a", href=True):
@@ -142,27 +179,38 @@ class MAScraper:
                 meta["pdf_url"] = href if href.startswith("http") else f"{MA_BASE_URL}{href}"
                 break
 
-        h1 = soup.find(["h1", "h2", "h3"])
-        if h1:
-            meta["judul"] = h1.get_text(strip=True)
+        # Susun Judul yang deskriptif dan konsisten
+        if meta["para_pihak"]:
+            meta["judul"] = f"Putusan MA No. {meta['nomor_perkara']}: {meta['para_pihak']}"
+        elif klasifikasi_val:
+            meta["judul"] = f"Putusan MA No. {meta['nomor_perkara']} ({klasifikasi_val})"
         else:
             meta["judul"] = f"Putusan MA No. {meta['nomor_perkara']}"
 
         return meta
 
     @staticmethod
-    def extract_pdf_summary(pdf_path: Path) -> str:
-        """Mengekstrak teks ringkasan amar atau isi putusan dari PDF."""
+    def extract_amar_from_pdf(pdf_path: Path) -> str:
+        """Mengekstrak blok amar putusan resmi ('M E N G A D I L I' / 'MENGADILI') dari PDF."""
         try:
             reader = PdfReader(str(pdf_path))
             num_pages = len(reader.pages)
             if num_pages == 0:
                 return ""
-            # Ambil halaman awal dan akhir (tempat amar biasanya diletakkan)
-            pages_to_read = [0]
-            if num_pages > 1:
-                pages_to_read.append(num_pages - 1)
-            text = " ".join([reader.pages[p].extract_text() or "" for p in pages_to_read])
-            return text[:4000].strip()
+            # Cari dari halaman akhir ke awal (sampai 10 halaman terakhir)
+            for p_idx in range(num_pages - 1, max(-1, num_pages - 12), -1):
+                text = reader.pages[p_idx].extract_text() or ""
+                # Cari blok MENGADILI yang diikuti titik dua (:)
+                m = re.search(r'(?:M\s*E\s*N\s*G\s*A\s*D\s*I\s*L\s*I|MENGADILI)\s*[:;]\s*(?:KEMBALI\s*[:;]\s*)?(.*?)(?:Demikianlah|Demikian|Ditetapkan|Panitera Pengganti|Hakim Anggota|$)', text, re.DOTALL | re.IGNORECASE)
+                if m:
+                    extracted = re.sub(r'\s+', ' ', m.group(1)).strip()
+                    if len(extracted) > 15:
+                        return extracted[:1000]
         except Exception:
-            return ""
+            pass
+        return ""
+
+    @staticmethod
+    def extract_pdf_summary(pdf_path: Path) -> str:
+        """Mengekstrak teks ringkasan amar atau isi putusan dari PDF."""
+        return MAScraper.extract_amar_from_pdf(pdf_path)

@@ -317,7 +317,11 @@ class CrawlerEngine:
 
                         ok = await loop.run_in_executor(None, scraper.client.download_pdf, meta["pdf_url"], dest_pdf)
                         if ok and dest_pdf.exists():
-                            meta["full_text"] = await loop.run_in_executor(None, scraper.extract_pdf_summary, dest_pdf)
+                            pdf_amar = await loop.run_in_executor(None, scraper.extract_amar_from_pdf, dest_pdf)
+                            if pdf_amar:
+                                meta["full_text"] = pdf_amar
+                                if not meta.get("amar_putusan") or meta["amar_putusan"] in ["—", "-", "", "Lain-lain"]:
+                                    meta["amar_putusan"] = pdf_amar
 
                             if self.r2 and self.r2.is_configured():
                                 r2_url = await loop.run_in_executor(None, self.r2.upload_file, dest_pdf, pdf_name)
@@ -388,7 +392,11 @@ class CrawlerEngine:
 
                         ok = await loop.run_in_executor(None, scraper.client.download_pdf, item["pdf_url"], dest_pdf)
                         if ok and dest_pdf.exists():
-                            item["full_text"] = await loop.run_in_executor(None, scraper.extract_pdf_summary, dest_pdf)
+                            pdf_amar = await loop.run_in_executor(None, scraper.extract_amar_from_pdf, dest_pdf)
+                            if pdf_amar:
+                                item["full_text"] = pdf_amar
+                                if not item.get("amar_putusan") or item["amar_putusan"] in ["—", "-", ""]:
+                                    item["amar_putusan"] = pdf_amar
 
                             if self.r2 and self.r2.is_configured():
                                 r2_url = await loop.run_in_executor(None, self.r2.upload_file, dest_pdf, pdf_name)

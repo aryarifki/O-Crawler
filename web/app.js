@@ -355,10 +355,10 @@ function renderTable(items) {
   } else {
     // Court Decisions
     headers.innerHTML = `
-      <th class="py-3 px-4">Lembaga</th>
-      <th class="py-3 px-4">No. Perkara</th>
+      <th class="py-3 px-4">Lembaga & No. Perkara</th>
       <th class="py-3 px-4">Tahun</th>
-      <th class="py-3 px-4">Amar / Pokok Perkara</th>
+      <th class="py-3 px-4">Para Pihak / Pokok Perkara</th>
+      <th class="py-3 px-4">Amar Putusan</th>
       <th class="py-3 px-4 text-right">Aksi</th>
     `;
     if (items.length === 0) {
@@ -368,13 +368,37 @@ function renderTable(items) {
     items.forEach(it => {
       const tr = document.createElement('tr');
       tr.className = 'hover:bg-slate-900/40 transition';
-      const badgeColor = it.lembaga === 'MA' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400';
+      const badgeColor = it.lembaga === 'MA' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20';
       const pdfUrl = formatPdfUrl(it.pdf_path);
+
+      // Ambil teks pihak / pokok perkara yang informatif
+      let pihakText = (it.para_pihak || '').trim();
+      if (!pihakText || pihakText === '—' || pihakText === '-') {
+        if (it.metadata && it.metadata.pokok_perkara) pihakText = it.metadata.pokok_perkara;
+        else if (it.klasifikasi && it.klasifikasi !== '-') pihakText = it.klasifikasi;
+        else pihakText = it.judul || '-';
+      }
+
+      // Ambil teks amar yang informatif (jangan pernah tampilkan tanda strip)
+      let amarText = (it.amar_putusan || '').trim();
+      if (!amarText || amarText === '—' || amarText === '-' || amarText.toLowerCase() === 'lain-lain') {
+        if (it.full_text && it.full_text.trim() && it.full_text !== '—') {
+          amarText = it.full_text.trim();
+        } else if (it.metadata && it.metadata.jenis_amar) {
+          amarText = it.metadata.jenis_amar;
+        } else {
+          amarText = 'Tercantum di berkas putusan resmi (PDF)';
+        }
+      }
+
       tr.innerHTML = `
-        <td class="py-3 px-4"><span class="px-2 py-0.5 rounded font-bold text-[10px] ${badgeColor}">${it.lembaga}</span></td>
-        <td class="py-3 px-4 font-semibold text-white whitespace-nowrap">${it.nomor_perkara}</td>
+        <td class="py-3 px-4 font-semibold text-white whitespace-nowrap">
+          <span class="px-2 py-0.5 rounded font-bold text-[10px] mr-1.5 ${badgeColor}">${it.lembaga}</span>
+          <span>${it.nomor_perkara}</span>
+        </td>
         <td class="py-3 px-4 text-slate-400">${it.tahun || '-'}</td>
-        <td class="py-3 px-4 max-w-md truncate" title="${it.amar_putusan || it.judul}">${it.amar_putusan || it.judul}</td>
+        <td class="py-3 px-4 max-w-xs truncate text-slate-300" title="${pihakText}">${pihakText}</td>
+        <td class="py-3 px-4 max-w-sm truncate text-slate-200" title="${amarText}">${amarText}</td>
         <td class="py-3 px-4 text-right whitespace-nowrap">
           ${pdfUrl ? `<a href="${pdfUrl}" target="_blank" class="px-2.5 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-lg mr-1 inline-flex items-center space-x-1"><span>PDF</span></a>` : ''}
           <button onclick='viewDecisionDetail(${JSON.stringify(it).replace(/'/g, "&#39;")})' class="px-2.5 py-1 text-xs bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600 hover:text-white rounded-lg">Detail</button>
@@ -417,19 +441,43 @@ function viewRegulationDetail(it) {
 function viewDecisionDetail(it) {
   document.getElementById('modal-title').innerText = `Putusan ${it.lembaga} No. ${it.nomor_perkara}`;
   const c = document.getElementById('modal-content');
+
+  let amarText = (it.amar_putusan || '').trim();
+  if (!amarText || amarText === '—' || amarText === '-' || amarText.toLowerCase() === 'lain-lain') {
+    if (it.full_text && it.full_text.trim() && it.full_text !== '—') {
+      amarText = it.full_text.trim();
+    } else if (it.metadata && it.metadata.jenis_amar) {
+      amarText = it.metadata.jenis_amar;
+    } else {
+      amarText = 'Teks amar lengkap tercantum di dalam salinan berkas PDF resmi.';
+    }
+  }
+
+  let pihakText = (it.para_pihak || '').trim();
+  if (!pihakText || pihakText === '—' || pihakText === '-') {
+    if (it.metadata && it.metadata.pemohon) pihakText = `Pemohon: ${it.metadata.pemohon}`;
+    else if (it.metadata && it.metadata.pokok_perkara) pihakText = it.metadata.pokok_perkara;
+    else pihakText = '-';
+  }
+
   c.innerHTML = `
     <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
       <span class="text-slate-400 block text-[11px] mb-1">Judul / Pokok Perkara:</span>
       <p class="font-medium text-white">${it.judul}</p>
     </div>
-    ${it.para_pihak ? `
-    <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
-      <span class="text-slate-400 block text-[11px] mb-1">Para Pihak Berperkara:</span>
-      <p class="text-slate-200">${it.para_pihak}</p>
-    </div>` : ''}
+    <div class="grid grid-cols-2 gap-3">
+      <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+        <span class="text-slate-400 block text-[11px] mb-1">Para Pihak / Pemohon:</span>
+        <p class="text-slate-200 font-medium">${pihakText}</p>
+      </div>
+      <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
+        <span class="text-slate-400 block text-[11px] mb-1">Klasifikasi Perkara:</span>
+        <p class="text-slate-200 font-medium">${it.klasifikasi || it.tingkat_proses || '-'}</p>
+      </div>
+    </div>
     <div class="p-3 bg-slate-950 rounded-xl border border-slate-800">
       <span class="text-slate-400 block text-[11px] mb-1">Amar Putusan:</span>
-      <p class="text-slate-200 whitespace-pre-wrap">${it.amar_putusan || 'Amar belum dimuat'}</p>
+      <p class="text-slate-200 whitespace-pre-wrap leading-relaxed">${amarText}</p>
     </div>
     ${it.pdf_path ? `
     <div class="pt-2">
