@@ -378,13 +378,20 @@ class DatabaseManager:
                 query = """
                 INSERT INTO legal_articles (
                     regulation_id, article_number, chapter, part, content,
-                    status, keywords, metadata, updated_at
+                    explanation, status, keywords, metadata, updated_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, NOW()
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
                 )
                 ON CONFLICT (regulation_id, article_number) DO UPDATE SET
-                    content = EXCLUDED.content,
-                    chapter = COALESCE(EXCLUDED.chapter, legal_articles.chapter),
+                    content = CASE 
+                        WHEN EXCLUDED.content ILIKE 'cukup jelas%%' AND legal_articles.content NOT ILIKE 'cukup jelas%%' 
+                        THEN legal_articles.content 
+                        ELSE EXCLUDED.content 
+                    END,
+                    explanation = COALESCE(NULLIF(EXCLUDED.explanation, ''), legal_articles.explanation),
+                    chapter = COALESCE(NULLIF(EXCLUDED.chapter, ''), legal_articles.chapter),
+                    part = COALESCE(NULLIF(EXCLUDED.part, ''), legal_articles.part),
+                    keywords = CASE WHEN array_length(EXCLUDED.keywords, 1) > 0 THEN EXCLUDED.keywords ELSE legal_articles.keywords END,
                     status = EXCLUDED.status,
                     updated_at = NOW();
                 """
@@ -397,6 +404,7 @@ class DatabaseManager:
                             art.get("chapter"),
                             art.get("part"),
                             art.get("content", ""),
+                            art.get("explanation", ""),
                             art.get("status", "BERLAKU"),
                             art.get("keywords", []),
                             json.dumps({}),
@@ -475,9 +483,19 @@ class DatabaseManager:
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
                 )
                 ON CONFLICT (putusan_id_slug) DO UPDATE SET
-                    amar_putusan = EXCLUDED.amar_putusan,
+                    amar_putusan = COALESCE(NULLIF(EXCLUDED.amar_putusan, ''), court_decisions.amar_putusan),
                     pdf_path = COALESCE(EXCLUDED.pdf_path, court_decisions.pdf_path),
-                    full_text = COALESCE(EXCLUDED.full_text, court_decisions.full_text),
+                    full_text = CASE 
+                        WHEN LENGTH(COALESCE(EXCLUDED.full_text, '')) > LENGTH(COALESCE(court_decisions.full_text, '')) 
+                        THEN EXCLUDED.full_text 
+                        ELSE COALESCE(court_decisions.full_text, EXCLUDED.full_text) 
+                    END,
+                    tanggal_putus = COALESCE(NULLIF(EXCLUDED.tanggal_putus, ''), court_decisions.tanggal_putus),
+                    metadata = CASE 
+                        WHEN EXCLUDED.metadata IS NOT NULL AND EXCLUDED.metadata != '{}'::jsonb 
+                        THEN EXCLUDED.metadata 
+                        ELSE court_decisions.metadata 
+                    END,
                     updated_at = NOW()
                 RETURNING id;
                 """
@@ -669,30 +687,31 @@ class DatabaseManager:
                 search_term = f"%{q}%"
                 if self.is_postgres:
                     cur.execute(
-                        "SELECT id, jenis, nomor, tahun, judul, status, pdf_path, total_pasal, created_at FROM regulations WHERE judul ILIKE %s OR jenis ILIKE %s ORDER BY tahun DESC, nomor DESC LIMIT %s OFFSET %s",
+                        "SELECT id, jenis, nomor, tahun, judul, status, pdf_path, total_pasal, created_at, sumber_url FROM regulations WHERE judul ILIKE %s OR jenis ILIKE %s ORDER BY tahun DESC, nomor DESC LIMIT %s OFFSET %s",
                         (search_term, search_term, limit, offset)
                     )
                 else:
                     cur.execute(
-                        "SELECT id, jenis, nomor, tahun, judul, status, pdf_path, total_pasal, created_at FROM regulations WHERE judul LIKE ? OR jenis LIKE ? ORDER BY tahun DESC, nomor DESC LIMIT ? OFFSET ?",
+                        "SELECT id, jenis, nomor, tahun, judul, status, pdf_path, total_pasal, created_at, sumber_url FROM regulations WHERE judul LIKE ? OR jenis LIKE ? ORDER BY tahun DESC, nomor DESC LIMIT ? OFFSET ?",
                         (search_term, search_term, limit, offset)
                     )
             else:
                 if self.is_postgres:
                     cur.execute(
-                        "SELECT id, jenis, nomor, tahun, judul, status, pdf_path, total_pasal, created_at FROM regulations ORDER BY tahun DESC, nomor DESC LIMIT %s OFFSET %s",
+                        "SELECT id, jenis, nomor, tahun, judul, status, pdf_path, total_pasal, created_at, sumber_url FROM regulations ORDER BY tahun DESC, nomor DESC LIMIT %s OFFSET %s",
                         (limit, offset)
                     )
                 else:
                     cur.execute(
-                        "SELECT id, jenis, nomor, tahun, judul, status, pdf_path, total_pasal, created_at FROM regulations ORDER BY tahun DESC, nomor DESC LIMIT ? OFFSET ?",
+                        "SELECT id, jenis, nomor, tahun, judul, status, pdf_path, total_pasal, created_at, sumber_url FROM regulations ORDER BY tahun DESC, nomor DESC LIMIT ? OFFSET ?",
                         (limit, offset)
                     )
             
             for row in cur.fetchall():
                 results.append(dict(row) if not isinstance(row, tuple) else {
                     "id": str(row[0]), "jenis": row[1], "nomor": row[2], "tahun": row[3],
-                    "judul": row[4], "status": row[5], "pdf_path": row[6], "total_pasal": row[7], "created_at": str(row[8])
+                    "judul": row[4], "status": row[5], "pdf_path": row[6], "total_pasal": row[7],
+                    "created_at": str(row[8]), "sumber_url": row[9] if len(row) > 9 and row[9] else ""
                 })
         except Exception as e:
             print(f"Error query regulations: {e}")
@@ -713,7 +732,7 @@ class DatabaseManager:
                 params.extend([q_p, q_p, q_p])
 
             where_str = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-            query_str = f"SELECT id, lembaga, nomor_perkara, tahun, tingkat_proses, klasifikasi, judul, para_pihak, amar_putusan, tanggal_putus, pdf_path FROM court_decisions {where_str} ORDER BY tahun DESC, id DESC LIMIT {limit} OFFSET {offset}"
+            query_str = f"SELECT id, lembaga, nomor_perkara, tahun, tingkat_proses, klasifikasi, judul, para_pihak, amar_putusan, tanggal_putus, pdf_path, sumber_url FROM court_decisions {where_str} ORDER BY tahun DESC, id DESC LIMIT {limit} OFFSET {offset}"
 
             if self.is_postgres:
                 cur.execute(query_str, tuple(params))
@@ -724,11 +743,56 @@ class DatabaseManager:
                 results.append(dict(row) if not isinstance(row, tuple) else {
                     "id": str(row[0]), "lembaga": row[1], "nomor_perkara": row[2], "tahun": row[3],
                     "tingkat_proses": row[4], "klasifikasi": row[5], "judul": row[6],
-                    "para_pihak": row[7], "amar_putusan": row[8], "tanggal_putus": row[9], "pdf_path": row[10]
+                    "para_pihak": row[7], "amar_putusan": row[8], "tanggal_putus": row[9],
+                    "pdf_path": row[10], "sumber_url": row[11] if len(row) > 11 and row[11] else ""
                 })
         except Exception as e:
             print(f"Error query court decisions: {e}")
         return results
+
+    def get_sumber_url_by_filename(self, filename: str) -> Optional[str]:
+        """Mencari sumber_url resmi dari database berdasarkan nama berkas PDF."""
+        clean = Path(filename).name
+        try:
+            cur = self.conn.cursor()
+            search_pattern = f"%{clean}%"
+            if self.is_postgres:
+                cur.execute(
+                    "SELECT sumber_url FROM regulations WHERE pdf_path ILIKE %s AND sumber_url IS NOT NULL AND sumber_url != '' LIMIT 1",
+                    (search_pattern,)
+                )
+                r = cur.fetchone()
+                if r:
+                    val = r[0] if isinstance(r, tuple) else r.get("sumber_url")
+                    if val:
+                        return val
+                cur.execute(
+                    "SELECT sumber_url FROM court_decisions WHERE pdf_path ILIKE %s AND sumber_url IS NOT NULL AND sumber_url != '' LIMIT 1",
+                    (search_pattern,)
+                )
+                d = cur.fetchone()
+                if d:
+                    val = d[0] if isinstance(d, tuple) else d.get("sumber_url")
+                    if val:
+                        return val
+            else:
+                cur.execute(
+                    "SELECT sumber_url FROM regulations WHERE pdf_path LIKE ? AND sumber_url IS NOT NULL AND sumber_url != '' LIMIT 1",
+                    (search_pattern,)
+                )
+                r = cur.fetchone()
+                if r and r[0]:
+                    return r[0]
+                cur.execute(
+                    "SELECT sumber_url FROM court_decisions WHERE pdf_path LIKE ? AND sumber_url IS NOT NULL AND sumber_url != '' LIMIT 1",
+                    (search_pattern,)
+                )
+                d = cur.fetchone()
+                if d and d[0]:
+                    return d[0]
+        except Exception as e:
+            print(f"Error finding sumber_url for {clean}: {e}")
+        return None
 
     # --- JOB TRACKING ---
     def record_job_start(self, job_id: str, source: str, category: str = "", query: str = "", tahun: str = ""):

@@ -248,9 +248,12 @@ PDF_DIR.mkdir(parents=True, exist_ok=True)
 @app.api_route("/root/O-Crawler/pdf_downloads/{filename}", methods=["GET", "HEAD"])
 @app.api_route("/api/pdf/{filename}", methods=["GET", "HEAD"])
 async def serve_downloaded_pdf(filename: str):
-    """Menyajikan berkas PDF: langsung dari disk jika ada, atau Streaming Reverse Proxy dari Cloudflare R2 dengan auto-cache ke disk lokal."""
+    """Menyajikan berkas PDF: langsung dari disk jika ada, atau Cloudflare R2 API (Zero-blocking),
+    dengan fallback otomatis Redirect (HTTP 302) ke portal dokumen hukum resmi."""
     clean_name = Path(filename).name
     file_path = PDF_DIR / clean_name
+
+    # 1. Cache HIT dari disk lokal (< 1ms)
     if file_path.is_file():
         return FileResponse(
             path=str(file_path),
@@ -261,75 +264,60 @@ async def serve_downloaded_pdf(filename: str):
                 "X-Cache-Status": "HIT_DISK",
             },
         )
-    
-    # Streaming Reverse Proxy dari Cloudflare R2 (Bypass sensor/DNS poison ISP Indonesia pada domain *.r2.dev)
-    r2_public = os.getenv("R2_PUBLIC_URL", "https://pub-fddf013852d24f71b86c70d2a2555e13.r2.dev").rstrip("/")
-    target_url = f"{r2_public}/{urllib.parse.quote(clean_name)}"
-    try:
+
+    # 2. Ambil dari Cloudflare R2 via REST API resmi (Bypass pemblokiran DNS *.r2.dev dan non-blocking)
+    def fetch_from_r2(key: str) -> Optional[tuple[bytes, str]]:
+        if not (engine.r2 and engine.r2.is_configured()):
+            return None
+        target_url = f"{engine.r2.base_api}/{urllib.parse.quote(key)}"
         req = urllib.request.Request(
             target_url,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) O-Crawler-Proxy/2.0"}
+            headers={
+                "Authorization": f"Bearer {engine.r2.api_token}",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) O-Crawler/2.0",
+            }
         )
-        resp = urllib.request.urlopen(req, timeout=30)
-        content_length = resp.headers.get("Content-Length")
-        headers = {
-            "Content-Disposition": f"inline; filename=\"{clean_name}\"",
-            "Cache-Control": "public, max-age=604800",
-            "Accept-Ranges": "bytes",
-            "X-Cache-Status": "MISS_PROXY_STREAM",
-        }
-        if content_length:
-            headers["Content-Length"] = content_length
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status == 200:
+                    content = resp.read()
+                    ct = resp.headers.get("Content-Type", "application/pdf")
+                    return (content, ct)
+        except Exception:
+            return None
+        return None
 
-        # Auto disk caching: simpan streaming ke file temp lalu rename atomik saat selesai
-        temp_file = file_path.with_suffix(f".tmp.{os.getpid()}.{int(asyncio.get_event_loop().time()*1000)}")
+    r2_data = await asyncio.to_thread(fetch_from_r2, clean_name)
+    if r2_data:
+        pdf_bytes, content_type = r2_data
+        # Simpan ke cache lokal disk secara atomik
+        try:
+            temp_file = file_path.with_suffix(f".tmp.{os.getpid()}.{int(asyncio.get_event_loop().time()*1000)}")
+            temp_file.write_bytes(pdf_bytes)
+            os.replace(temp_file, file_path)
+        except Exception:
+            pass
 
-        def file_iterator():
-            fp = None
-            try:
-                fp = open(temp_file, "wb")
-                while True:
-                    chunk = resp.read(64 * 1024)
-                    if not chunk:
-                        break
-                    if fp:
-                        fp.write(chunk)
-                    yield chunk
-                if fp:
-                    fp.close()
-                    fp = None
-                    os.replace(temp_file, file_path)
-            except Exception:
-                if fp:
-                    fp.close()
-                    fp = None
-                if temp_file.exists():
-                    try:
-                        temp_file.unlink()
-                    except Exception:
-                        pass
-                raise
-            finally:
-                resp.close()
-                if fp:
-                    fp.close()
-                if temp_file.exists() and not file_path.exists():
-                    try:
-                        temp_file.unlink()
-                    except Exception:
-                        pass
-
-        return StreamingResponse(
-            file_iterator(),
-            media_type="application/pdf",
-            headers=headers
+        return Response(
+            content=pdf_bytes,
+            media_type=content_type or "application/pdf",
+            headers={
+                "Content-Disposition": f"inline; filename=\"{clean_name}\"",
+                "Cache-Control": "public, max-age=604800",
+                "X-Cache-Status": "MISS_R2_API",
+            },
         )
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            raise HTTPException(status_code=404, detail=f"Berkas PDF '{clean_name}' tidak ditemukan di Cloudflare R2 maupun lokal.")
-        raise HTTPException(status_code=e.code, detail=f"Gagal mengambil PDF dari Cloudflare R2: {e.reason}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Kesalahan proxy streaming PDF: {str(e)}")
+
+    # 3. Fallback: Cari tautan resmi (sumber_url) dari database dan redirect 302 seketika
+    sumber_url = await asyncio.to_thread(db.get_sumber_url_by_filename, clean_name)
+    if sumber_url:
+        return RedirectResponse(url=sumber_url, status_code=302)
+
+    # 4. Berkas benar-benar tidak ditemukan
+    raise HTTPException(
+        status_code=404,
+        detail=f"Berkas PDF '{clean_name}' tidak ditemukan di penyimpanan lokal, Cloudflare R2, maupun tautan sumber resmi."
+    )
 
 
 # Explicit Frontend Handlers with Anti-Caching headers

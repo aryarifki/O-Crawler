@@ -130,5 +130,44 @@ class MKScraper:
         return ""
 
     @staticmethod
+    def extract_full_text_from_pdf(pdf_path: Path, max_pages: int = 150) -> str:
+        """Mengekstrak seluruh isi salinan putusan MK secara lengkap."""
+        try:
+            reader = PdfReader(str(pdf_path))
+            num_pages = min(len(reader.pages), max_pages)
+            if num_pages == 0:
+                return ""
+            pages_text = []
+            for p_idx in range(num_pages):
+                raw = (reader.pages[p_idx].extract_text() or "").strip()
+                if raw:
+                    pages_text.append(raw)
+            return "\n\n".join(pages_text)
+        except Exception:
+            return ""
+
+    @staticmethod
+    def extract_tanggal_putus_from_pdf(pdf_path: Path) -> str:
+        """Mengekstrak tanggal pengucapan putusan MK dari bagian penutup."""
+        try:
+            reader = PdfReader(str(pdf_path))
+            num_pages = len(reader.pages)
+            if num_pages == 0:
+                return ""
+            for p_idx in range(num_pages - 1, max(-1, num_pages - 5), -1):
+                text = reader.pages[p_idx].extract_text() or ""
+                # Cari pola tanggal resmi pengucapan putusan sidang pleno
+                m = re.search(r"pada hari\s+[A-Za-z]+,\s+tanggal\s+([^,]+,\s+tahun\s+[A-Za-z0-9\s]+?)(?:,|\.|\s+yang diucapkan|$)", text, re.IGNORECASE)
+                if m:
+                    return re.sub(r'\s+', ' ', m.group(1)).strip()
+                m_simple = re.search(r"(\d{1,2}\s+(?:Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s+\d{4})", text, re.IGNORECASE)
+                if m_simple:
+                    return m_simple.group(1).strip()
+        except Exception:
+            pass
+        return ""
+
+    @staticmethod
     def extract_pdf_summary(pdf_path: Path) -> str:
         return MKScraper.extract_amar_from_pdf(pdf_path)
+

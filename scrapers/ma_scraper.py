@@ -211,6 +211,31 @@ class MAScraper:
         return ""
 
     @staticmethod
+    def extract_full_text_from_pdf(pdf_path: Path, max_pages: int = 150) -> str:
+        """Mengekstrak teks salinan putusan secara lengkap dan bersih dari PDF tanpa batas 4.000 karakter."""
+        try:
+            reader = PdfReader(str(pdf_path))
+            num_pages = min(len(reader.pages), max_pages)
+            if num_pages == 0:
+                return ""
+            pages_text = []
+            for p_idx in range(num_pages):
+                raw = reader.pages[p_idx].extract_text() or ""
+                # Bersihkan watermark dan header repetitif portal MA
+                cleaned = re.sub(r"Mahkamah Agung Republik Indonesia\s*", "", raw, flags=re.IGNORECASE)
+                cleaned = re.sub(r"Direktori Putusan Mahkamah Agung Republik Indonesia\s*", "", cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r"putusan\.mahkamahagung\.go\.id\s*", "", cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r"Kepaniteraan Mahkamah Agung Republik Indonesia berusaha untuk selalu.*?(?:\n|$)", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+                cleaned = re.sub(r"Halaman\s+\d+\s+dari\s+\d+\s+Hal\..*?(?:\n|$)", "", cleaned, flags=re.IGNORECASE)
+                cleaned = cleaned.strip()
+                if cleaned:
+                    pages_text.append(cleaned)
+            return "\n\n".join(pages_text)
+        except Exception:
+            return ""
+
+    @staticmethod
     def extract_pdf_summary(pdf_path: Path) -> str:
         """Mengekstrak teks ringkasan amar atau isi putusan dari PDF."""
         return MAScraper.extract_amar_from_pdf(pdf_path)
+

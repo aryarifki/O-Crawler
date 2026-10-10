@@ -285,13 +285,20 @@ class DatabaseManager:
         query = """
         INSERT INTO legal_articles (
             regulation_id, article_number, chapter, part, content,
-            status, keywords, metadata, updated_at
+            explanation, status, keywords, metadata, updated_at
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, NOW()
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
         )
         ON CONFLICT (regulation_id, article_number) DO UPDATE SET
-            content = EXCLUDED.content,
-            chapter = COALESCE(EXCLUDED.chapter, legal_articles.chapter),
+            content = CASE 
+                WHEN EXCLUDED.content ILIKE 'cukup jelas%%' AND legal_articles.content NOT ILIKE 'cukup jelas%%' 
+                THEN legal_articles.content 
+                ELSE EXCLUDED.content 
+            END,
+            explanation = COALESCE(NULLIF(EXCLUDED.explanation, ''), legal_articles.explanation),
+            chapter = COALESCE(NULLIF(EXCLUDED.chapter, ''), legal_articles.chapter),
+            part = COALESCE(NULLIF(EXCLUDED.part, ''), legal_articles.part),
+            keywords = CASE WHEN array_length(EXCLUDED.keywords, 1) > 0 THEN EXCLUDED.keywords ELSE legal_articles.keywords END,
             status = EXCLUDED.status,
             updated_at = NOW();
         """
@@ -307,6 +314,7 @@ class DatabaseManager:
                             art.get("chapter"),
                             art.get("part"),
                             art["content"],
+                            art.get("explanation", ""),
                             art.get("status", "BERLAKU"),
                             art.get("keywords", []),
                             json.dumps({}),
@@ -323,8 +331,37 @@ class DatabaseManager:
             return count
 
 
+def clean_watermarks(text: str) -> str:
+    """Membersihkan watermark security paper, header lembaran negara, dan running numbers."""
+    text = re.sub(r'SK\s*No\s*\d+[A-Z]?', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'PRES\s*!?\s*DEN\s+R\.?EPUBLIK\s+INDONESIA\s*[-_]\s*\d+\s*[-_]', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'TAMBAHAN\s+LEMBARAN\s+NEGARA\s+REPUBLIK\s+INDONESIA\s+NOMOR\s+\d+', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'LEMBARAN\s+NEGARA\s+REPUBLIK\s+INDONESIA\s+TAHUN\s+\d+\s+NOMOR\s+\d+', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^\s*[-_]\s*\d+\s*[-_]\s*$', '', text, flags=re.MULTILINE)
+    return text
+
+
+def extract_keywords_from_text(text: str) -> List[str]:
+    """Mengekstrak kata kunci esensial dari teks pasal."""
+    keywords = set()
+    for m in re.findall(r'\"([^\"]{3,40})\"', text):
+        clean_kw = m.strip()
+        if len(clean_kw) > 3 and not clean_kw.lower().startswith('cukup'):
+            keywords.add(clean_kw.lower())
+
+    common_terms = [
+        'pidana', 'denda', 'pemerintah pusat', 'pemerintah daerah', 'menteri',
+        'presiden', 'ganti rugi', 'izin', 'pengawasan', 'sanksi', 'perencanaan',
+        'pelanggaran', 'kewenangan', 'larangan', 'kewajiban', 'hak', 'gugatan'
+    ]
+    for term in common_terms:
+        if re.search(rf'\b{term}\b', text, re.IGNORECASE):
+            keywords.add(term)
+    return sorted(list(keywords))[:8]
+
+
 def parse_articles_from_pdf(pdf_path: Path) -> List[Dict[str, Any]]:
-    """Mengekstrak teks PDF dan memilahnya menjadi hierarki pasal & bab."""
+    """Mengekstrak teks PDF dan memilahnya menjadi hierarki pasal & bab tanpa kontaminasi penjelasan/lampiran."""
     try:
         reader = PdfReader(str(pdf_path))
         full_text = "\n".join([page.extract_text() or "" for page in reader.pages])
@@ -332,17 +369,48 @@ def parse_articles_from_pdf(pdf_path: Path) -> List[Dict[str, Any]]:
         print(f"   ⚠️ [Parser] Gagal membaca teks PDF: {e}")
         return []
 
+    cleaned_text = clean_watermarks(full_text)
+
+    # Identifikasi Batas Zona
+    penj_m = re.search(r'^\s*PENJELASAN\s+(?:ATAS\s+)?(?:UNDANG-UNDANG|PERATURAN|RANCANGAN)', cleaned_text, re.MULTILINE | re.IGNORECASE)
+    lamp_m = re.search(r'^\s*LAMPIRAN(?:\s+[IVXLCDM0-9]+|\s*$)', cleaned_text, re.MULTILINE | re.IGNORECASE)
+
+    penj_start = penj_m.start() if penj_m else len(cleaned_text)
+    lamp_start = lamp_m.start() if lamp_m else len(cleaned_text)
+
+    batang_end = min(penj_start, lamp_start)
+    batang_tubuh_text = cleaned_text[:batang_end]
+
+    penjelasan_text = ""
+    if penj_m and penj_start < lamp_start:
+        penjelasan_text = cleaned_text[penj_start:lamp_start]
+
+    explanations: Dict[str, str] = {}
+    if penjelasan_text:
+        penj_pasal_regex = re.compile(r'^\s*Pasal\s+([0-9A-Za-z]+)\s*[\.:]?\s*$', re.MULTILINE | re.IGNORECASE)
+        penj_matches = list(penj_pasal_regex.finditer(penjelasan_text))
+        for i, m in enumerate(penj_matches):
+            raw_num = m.group(1).strip()
+            art_num = re.sub(r'([0-9])O$', r'\g<1>0', raw_num)
+            start_pos = m.end()
+            end_pos = penj_matches[i+1].start() if i+1 < len(penj_matches) else len(penjelasan_text)
+            exp_content = re.sub(r'\s+', ' ', clean_watermarks(penjelasan_text[start_pos:end_pos])).strip()
+            if exp_content:
+                explanations[art_num] = exp_content
+
     # Normalisasi line break yang terputus (e.g. "Pasal \n 12" -> "Pasal 12")
-    normalized_text = re.sub(r"Pasal\s*\n\s*([0-9A-Za-z]+)", r"Pasal \1", full_text, flags=re.IGNORECASE)
+    normalized_text = re.sub(r"Pasal\s*\n\s*([0-9A-Za-z]+)", r"Pasal \1", batang_tubuh_text, flags=re.IGNORECASE)
     lines = normalized_text.splitlines()
 
     articles: List[Dict[str, Any]] = []
     current_chapter = ""
+    current_part = ""
     current_art_num = ""
     current_content: List[str] = []
 
     pasal_regex = re.compile(r"^\s*Pasal\s+([0-9A-Za-z]+)\s*[\.:]?\s*$", re.IGNORECASE)
     bab_regex = re.compile(r"^\s*(BAB\s+[IVXLCDM0-9]+.*)$", re.IGNORECASE)
+    bagian_regex = re.compile(r"^\s*(Bagian\s+(?:Kesatu|Kedua|Ketiga|Keempat|Kelima|Keenam|Ketujuh|Kedelapan|Kesembilan|Kesepuluh|[A-Za-z0-9]+).*)$", re.IGNORECASE)
 
     for raw_line in lines:
         line = raw_line.strip()
@@ -354,26 +422,42 @@ def parse_articles_from_pdf(pdf_path: Path) -> List[Dict[str, Any]]:
             current_chapter = bab_match.group(1).strip()
             continue
 
+        bagian_match = bagian_regex.match(line)
+        if bagian_match:
+            current_part = bagian_match.group(1).strip()
+            continue
+
         pasal_match = pasal_regex.match(line)
         if pasal_match:
             if current_art_num and current_content:
+                c_text = " ".join(current_content).strip()
                 articles.append({
                     "article_number": current_art_num,
                     "chapter": current_chapter,
-                    "content": " ".join(current_content).strip(),
+                    "part": current_part,
+                    "content": c_text,
+                    "explanation": explanations.get(current_art_num, ""),
+                    "keywords": extract_keywords_from_text(c_text),
+                    "status": "BERLAKU",
                 })
                 current_content = []
-            current_art_num = pasal_match.group(1).strip()
+            raw_art = pasal_match.group(1).strip()
+            current_art_num = re.sub(r'([0-9])O$', r'\g<1>0', raw_art)
             continue
 
         if current_art_num:
             current_content.append(line)
 
     if current_art_num and current_content:
+        c_text = " ".join(current_content).strip()
         articles.append({
             "article_number": current_art_num,
             "chapter": current_chapter,
-            "content": " ".join(current_content).strip(),
+            "part": current_part,
+            "content": c_text,
+            "explanation": explanations.get(current_art_num, ""),
+            "keywords": extract_keywords_from_text(c_text),
+            "status": "BERLAKU",
         })
 
     return articles

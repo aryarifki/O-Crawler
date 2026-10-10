@@ -452,42 +452,27 @@ async function fetchExplorerData() {
   }
 }
 
-function formatPdfUrl(path) {
-  if (!path) return '';
-  // Selalu arahkan ke Streaming Reverse Proxy /api/pdf/ untuk mencegah blank screen akibat sensor ISP Indonesia
-  const filename = path.split('/').pop().split('?')[0];
-  return `/api/pdf/${encodeURIComponent(filename)}`;
+function formatPdfUrl(it) {
+  if (!it) return '';
+  if (typeof it === 'string') {
+    const filename = it.split('/').pop().split('?')[0];
+    return `/api/pdf/${encodeURIComponent(filename)}`;
+  }
+  if (it.pdf_path && it.pdf_path.trim()) {
+    const filename = it.pdf_path.split('/').pop().split('?')[0];
+    return `/api/pdf/${encodeURIComponent(filename)}`;
+  }
+  if (it.sumber_url && it.sumber_url.trim()) {
+    return it.sumber_url;
+  }
+  return '';
 }
 
-// --- 6. ANIMASI LOADING STATIS SAAT MEMBUKA PDF (Requirement 6) ---
+// --- 6. PEMBUKA DOKUMEN PDF (Direct Instant Navigation) ---
 function openPdfWithLoader(url, title) {
   if (!url) return;
-  const overlay = document.getElementById('pdf-loading-overlay');
-  const titleEl = document.getElementById('pdf-loading-title');
-  const subEl = document.getElementById('pdf-loading-subtitle');
-
-  if (titleEl) {
-    titleEl.innerText = title ? `Mempersiapkan: ${title}` : 'Mempersiapkan Dokumen Hukum';
-  }
-  if (subEl) {
-    subEl.innerText = 'Mengambil salinan PDF & verifikasi integritas berkas...';
-  }
-
-  if (overlay) {
-    overlay.classList.remove('hidden');
-    overlay.classList.add('flex');
-  }
-
-  // Animasi loading statis sejenak sebelum membuka dokumen PDF di tab baru
-  setTimeout(() => {
-    window.open(url, '_blank');
-    setTimeout(() => {
-      if (overlay) {
-        overlay.classList.add('hidden');
-        overlay.classList.remove('flex');
-      }
-    }, 400);
-  }, 750);
+  // Buka langsung tanpa penundaan (delay) untuk mencegah popup blocker atau tab about:blank
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function renderTable(items) {
@@ -511,7 +496,7 @@ function renderTable(items) {
     items.forEach(it => {
       const tr = document.createElement('tr');
       tr.className = 'hover:bg-white/[0.03] transition';
-      const pdfUrl = formatPdfUrl(it.pdf_path);
+      const pdfUrl = formatPdfUrl(it);
       const safeTitle = (it.judul || '').replace(/"/g, '&quot;');
       tr.innerHTML = `
         <td class="py-3.5 px-4 font-bold text-white whitespace-nowrap">${it.jenis} No. ${it.nomor}</td>
@@ -519,7 +504,7 @@ function renderTable(items) {
         <td class="py-3.5 px-4 max-w-md truncate" title="${safeTitle}">${it.judul}</td>
         <td class="py-3.5 px-4"><span class="px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 font-mono text-[11px] font-bold border border-indigo-500/25">${it.total_pasal || 0} Pasal</span></td>
         <td class="py-3.5 px-4 text-right whitespace-nowrap space-x-1.5">
-          ${pdfUrl ? `<button onclick="openPdfWithLoader('${pdfUrl}', '${it.jenis} No. ${it.nomor}')" class="px-3 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-indigo-300 font-semibold rounded-lg inline-flex items-center space-x-1 transition"><span>PDF</span></button>` : ''}
+          ${pdfUrl ? `<a href="${pdfUrl}" target="_blank" rel="noopener noreferrer" class="px-3 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white font-semibold rounded-lg inline-flex items-center space-x-1 transition"><span>PDF</span><i data-lucide="external-link" class="w-3 h-3 ml-0.5 opacity-70"></i></a>` : ''}
           <button onclick='viewRegulationDetail(${JSON.stringify(it).replace(/'/g, "&#39;")})' class="px-3 py-1 text-xs bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600 hover:text-white font-semibold rounded-lg transition">Detail</button>
         </td>
       `;
@@ -542,7 +527,7 @@ function renderTable(items) {
       const tr = document.createElement('tr');
       tr.className = 'hover:bg-white/[0.03] transition';
       const badgeColor = it.lembaga === 'MA' ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25' : 'bg-amber-500/15 text-amber-300 border border-amber-500/25';
-      const pdfUrl = formatPdfUrl(it.pdf_path);
+      const pdfUrl = formatPdfUrl(it);
 
       let pihakText = (it.para_pihak || '').trim();
       if (!pihakText || pihakText === '—' || pihakText === '-') {
@@ -571,7 +556,7 @@ function renderTable(items) {
         <td class="py-3.5 px-4 max-w-xs truncate text-slate-300" title="${pihakText}">${pihakText}</td>
         <td class="py-3.5 px-4 max-w-sm truncate text-slate-200" title="${amarText}">${amarText}</td>
         <td class="py-3.5 px-4 text-right whitespace-nowrap space-x-1.5">
-          ${pdfUrl ? `<button onclick="openPdfWithLoader('${pdfUrl}', 'Putusan ${it.lembaga} ${it.nomor_perkara}')" class="px-3 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-indigo-300 font-semibold rounded-lg inline-flex items-center space-x-1 transition"><span>PDF</span></button>` : ''}
+          ${pdfUrl ? `<a href="${pdfUrl}" target="_blank" rel="noopener noreferrer" class="px-3 py-1 text-xs bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white font-semibold rounded-lg inline-flex items-center space-x-1 transition"><span>PDF</span><i data-lucide="external-link" class="w-3 h-3 ml-0.5 opacity-70"></i></a>` : ''}
           <button onclick='viewDecisionDetail(${JSON.stringify(it).replace(/'/g, "&#39;")})' class="px-3 py-1 text-xs bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600 hover:text-white font-semibold rounded-lg transition">Detail</button>
         </td>
       `;
@@ -587,7 +572,7 @@ function viewRegulationDetail(it) {
     <span>${it.jenis} Nomor ${it.nomor} Tahun ${it.tahun}</span>
   `;
   const c = document.getElementById('modal-content');
-  const pdfUrl = formatPdfUrl(it.pdf_path);
+  const pdfUrl = formatPdfUrl(it);
   c.innerHTML = `
     <div class="p-3.5 bg-[#090b10] rounded-2xl border border-white/[0.08]">
       <span class="text-slate-400 block text-[11px] font-semibold mb-1">Judul Resmi:</span>
@@ -604,11 +589,18 @@ function viewRegulationDetail(it) {
       </div>
     </div>
     ${pdfUrl ? `
-    <div class="pt-2">
-      <button onclick="openPdfWithLoader('${pdfUrl}', '${it.jenis} No. ${it.nomor}')" class="w-full py-3 m3-btn-primary flex items-center justify-center space-x-2 font-bold cursor-pointer">
+    <div class="pt-2 flex flex-col gap-2">
+      <a href="${pdfUrl}" target="_blank" rel="noopener noreferrer" class="w-full py-3 m3-btn-primary flex items-center justify-center space-x-2 font-bold cursor-pointer">
         <i data-lucide="file-text" class="w-4 h-4"></i>
-        <span>Buka / Unduh Berkas Salinan Asli (PDF)</span>
-      </button>
+        <span>Buka Salinan Resmi (PDF)</span>
+        <i data-lucide="external-link" class="w-4 h-4 ml-1 opacity-70"></i>
+      </a>
+      ${it.sumber_url ? `
+      <a href="${it.sumber_url}" target="_blank" rel="noopener noreferrer" class="w-full py-2.5 bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-white rounded-xl border border-white/[0.08] flex items-center justify-center space-x-2 text-xs font-semibold transition">
+        <i data-lucide="globe" class="w-3.5 h-3.5 text-amber-400"></i>
+        <span>Kunjungi Laman Portal Resmi (peraturan.go.id)</span>
+        <i data-lucide="external-link" class="w-3.5 h-3.5 ml-1 opacity-70"></i>
+      </a>` : ''}
     </div>` : ''}
   `;
   const modal = document.getElementById('detail-modal');
@@ -644,7 +636,7 @@ function viewDecisionDetail(it) {
     else pihakText = '-';
   }
 
-  const pdfUrl = formatPdfUrl(it.pdf_path);
+  const pdfUrl = formatPdfUrl(it);
   c.innerHTML = `
     <div class="p-3.5 bg-[#090b10] rounded-2xl border border-white/[0.08]">
       <span class="text-slate-400 block text-[11px] font-semibold mb-1">Judul / Pokok Perkara:</span>
@@ -665,11 +657,18 @@ function viewDecisionDetail(it) {
       <p class="text-slate-200 whitespace-pre-wrap leading-relaxed">${amarText}</p>
     </div>
     ${pdfUrl ? `
-    <div class="pt-2">
-      <button onclick="openPdfWithLoader('${pdfUrl}', 'Putusan ${it.lembaga} ${it.nomor_perkara}')" class="w-full py-3 m3-btn-primary flex items-center justify-center space-x-2 font-bold cursor-pointer">
+    <div class="pt-2 flex flex-col gap-2">
+      <a href="${pdfUrl}" target="_blank" rel="noopener noreferrer" class="w-full py-3 m3-btn-primary flex items-center justify-center space-x-2 font-bold cursor-pointer">
         <i data-lucide="file-text" class="w-4 h-4"></i>
-        <span>Buka / Unduh Berkas Putusan Resmi (PDF)</span>
-      </button>
+        <span>Buka Berkas Putusan Resmi (PDF)</span>
+        <i data-lucide="external-link" class="w-4 h-4 ml-1 opacity-70"></i>
+      </a>
+      ${it.sumber_url ? `
+      <a href="${it.sumber_url}" target="_blank" rel="noopener noreferrer" class="w-full py-2.5 bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 hover:text-white rounded-xl border border-white/[0.08] flex items-center justify-center space-x-2 text-xs font-semibold transition">
+        <i data-lucide="globe" class="w-3.5 h-3.5 text-emerald-400"></i>
+        <span>Kunjungi Laman Direktori Resmi (${it.lembaga})</span>
+        <i data-lucide="external-link" class="w-3.5 h-3.5 ml-1 opacity-70"></i>
+      </a>` : ''}
     </div>` : ''}
   `;
   const modalDec = document.getElementById('detail-modal');

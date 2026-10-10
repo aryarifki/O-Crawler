@@ -228,21 +228,28 @@ class CrawlerEngine:
 
                     pdf_name = f"{meta['jenis']}_{meta['nomor']}_{meta['tahun']}.pdf".replace("/", "_").replace(" ", "_")
                     dest_pdf = self.pdf_dir / pdf_name
-                    meta["pdf_path"] = f"/pdf_downloads/{pdf_name}"
-
-                    # Download PDF
-                    ok = await loop.run_in_executor(None, scraper.client.download_pdf, meta["pdf_url"], dest_pdf)
                     articles = []
-                    if ok and dest_pdf.exists():
-                        articles = await loop.run_in_executor(None, scraper.parse_articles_from_pdf, dest_pdf)
 
-                        # Cloudflare R2
-                        if self.r2 and self.r2.is_configured():
-                            r2_url = await loop.run_in_executor(None, self.r2.upload_file, dest_pdf, pdf_name)
-                            if r2_url:
-                                meta["pdf_path"] = f"/api/pdf/{pdf_name}"
-                                if not keep_local_pdf:
-                                    dest_pdf.unlink(missing_ok=True)
+                    # Download PDF jika ada
+                    if meta.get("pdf_url"):
+                        ok = await loop.run_in_executor(None, scraper.client.download_pdf, meta["pdf_url"], dest_pdf)
+                        if ok and dest_pdf.exists():
+                            meta["pdf_path"] = f"/pdf_downloads/{pdf_name}"
+                            articles = await loop.run_in_executor(None, scraper.parse_articles_from_pdf, dest_pdf)
+
+                            # Cloudflare R2
+                            if self.r2 and self.r2.is_configured():
+                                r2_url = await loop.run_in_executor(None, self.r2.upload_file, dest_pdf, pdf_name)
+                                if r2_url:
+                                    meta["pdf_path"] = f"/api/pdf/{pdf_name}"
+                                    if not keep_local_pdf:
+                                        dest_pdf.unlink(missing_ok=True)
+                        else:
+                            meta["pdf_path"] = None
+                            self.log(f"⚠️ [PDF Gagal] File PDF untuk '{meta['judul']}' gagal diunduh atau corrupt.", "warn")
+                    else:
+                        meta["pdf_path"] = None
+                        self.log(f"ℹ️ [PDF Tidak Ada] Portal tidak menyediakan berkas PDF untuk '{meta['judul']}'.", "info")
 
                     # Simpan DB
                     reg_id = self.db.upsert_regulation(meta)
@@ -313,15 +320,20 @@ class CrawlerEngine:
                     if meta.get("pdf_url"):
                         pdf_name = f"MA_{meta['nomor_perkara'].replace('/', '_').replace(' ', '_')}.pdf"
                         dest_pdf = self.pdf_dir / pdf_name
-                        meta["pdf_path"] = f"/pdf_downloads/{pdf_name}"
 
                         ok = await loop.run_in_executor(None, scraper.client.download_pdf, meta["pdf_url"], dest_pdf)
                         if ok and dest_pdf.exists():
+                            meta["pdf_path"] = f"/pdf_downloads/{pdf_name}"
+                            pdf_full = await loop.run_in_executor(None, scraper.extract_full_text_from_pdf, dest_pdf)
+                            if pdf_full:
+                                meta["full_text"] = pdf_full
+
                             pdf_amar = await loop.run_in_executor(None, scraper.extract_amar_from_pdf, dest_pdf)
                             if pdf_amar:
-                                meta["full_text"] = pdf_amar
                                 if not meta.get("amar_putusan") or meta["amar_putusan"] in ["—", "-", "", "Lain-lain"]:
                                     meta["amar_putusan"] = pdf_amar
+                                if not meta.get("full_text"):
+                                    meta["full_text"] = pdf_amar
 
                             if self.r2 and self.r2.is_configured():
                                 r2_url = await loop.run_in_executor(None, self.r2.upload_file, dest_pdf, pdf_name)
@@ -329,6 +341,11 @@ class CrawlerEngine:
                                     meta["pdf_path"] = f"/api/pdf/{pdf_name}"
                                     if not keep_local_pdf:
                                         dest_pdf.unlink(missing_ok=True)
+                        else:
+                            meta["pdf_path"] = None
+                            self.log(f"⚠️ [PDF Gagal] File PDF untuk '{meta['nomor_perkara']}' gagal diunduh.", "warn")
+                    else:
+                        meta["pdf_path"] = None
 
                     dec_id = self.db.upsert_court_decision(meta)
                     self.stats["total_crawled"] += 1
@@ -388,15 +405,25 @@ class CrawlerEngine:
                     if item.get("pdf_url"):
                         pdf_name = f"MK_{item['nomor_perkara'].replace('/', '_').replace(' ', '_')}.pdf"
                         dest_pdf = self.pdf_dir / pdf_name
-                        item["pdf_path"] = f"/pdf_downloads/{pdf_name}"
 
                         ok = await loop.run_in_executor(None, scraper.client.download_pdf, item["pdf_url"], dest_pdf)
                         if ok and dest_pdf.exists():
+                            item["pdf_path"] = f"/pdf_downloads/{pdf_name}"
+                            pdf_full = await loop.run_in_executor(None, scraper.extract_full_text_from_pdf, dest_pdf)
+                            if pdf_full:
+                                item["full_text"] = pdf_full
+
                             pdf_amar = await loop.run_in_executor(None, scraper.extract_amar_from_pdf, dest_pdf)
                             if pdf_amar:
-                                item["full_text"] = pdf_amar
                                 if not item.get("amar_putusan") or item["amar_putusan"] in ["—", "-", ""]:
                                     item["amar_putusan"] = pdf_amar
+                                if not item.get("full_text"):
+                                    item["full_text"] = pdf_amar
+
+                            if not item.get("tanggal_putus"):
+                                tgl = await loop.run_in_executor(None, scraper.extract_tanggal_putus_from_pdf, dest_pdf)
+                                if tgl:
+                                    item["tanggal_putus"] = tgl
 
                             if self.r2 and self.r2.is_configured():
                                 r2_url = await loop.run_in_executor(None, self.r2.upload_file, dest_pdf, pdf_name)
@@ -404,6 +431,11 @@ class CrawlerEngine:
                                     item["pdf_path"] = f"/api/pdf/{pdf_name}"
                                     if not keep_local_pdf:
                                         dest_pdf.unlink(missing_ok=True)
+                        else:
+                            item["pdf_path"] = None
+                            self.log(f"⚠️ [PDF Gagal] Berkas PDF MK '{item['nomor_perkara']}' gagal diunduh.", "warn")
+                    else:
+                        item["pdf_path"] = None
 
                     dec_id = self.db.upsert_court_decision(item)
                     self.stats["total_crawled"] += 1
